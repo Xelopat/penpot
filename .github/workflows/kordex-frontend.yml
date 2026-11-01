@@ -39,6 +39,7 @@ jobs:
             --platform linux/amd64,linux/arm64 \
             --build-arg "KORDEX_VERSION=$version" \
             --tag "ghcr.io/xelopat/penpot-frontend:$version" \
+            --tag ghcr.io/xelopat/penpot-frontend:2.18.5-kordex.1 \
             --cache-from type=gha \
             --cache-to type=gha,mode=max \
             --push .

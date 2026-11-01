@@ -16,7 +16,7 @@
 (t/deftest test-overlay-position-reference-survives-plugin-round-trip
   ;; Proxies are only handles here; these functions do not read shape state.
   (with-redefs [format/shape-proxy (fn [_plugin _file-id _page-id id]
-                                   #js {:$id id})]
+                                     #js {:$id id})]
     (doseq [action-type [:open-overlay :toggle-overlay]]
       (t/testing (name action-type)
         (let [reference-id (random-uuid)

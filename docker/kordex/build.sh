@@ -2,14 +2,14 @@
 set -euo pipefail
 
 cd /workspace/frontend
-# Build the upstream frontend, including its renderer and bundled plugins.
-# Keep the original build script as the source of truth for build order.
-bash ./scripts/build "${1:?Pass the fork version}"
-
 cljfmt check src/app/plugins/parser.cljs src/app/plugins/format.cljs \
   test/frontend_tests/plugins/parser_test.cljs \
   test/frontend_tests/plugins/format_test.cljs
-pnpm run lint:clj
+
+# Build the upstream frontend, including its renderer and bundled plugins.
+# Keep the original build script as the source of truth for build order.
+bash ./scripts/build "${1:?Pass the fork version}"
+clj-kondo --config-dir ../.clj-kondo --lint ../common/src src/ --fail-level error
 
 # The frontend build above already generated the WASM artifacts.
 clojure -M:dev:shadow-cljs compile test > /workspace/kordex-test-build.log 2>&1 || {
