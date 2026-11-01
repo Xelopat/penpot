@@ -11,14 +11,13 @@
    [app.common.files.validate :as cfv]
    [app.common.time :as ct]
    [app.common.uuid :as uuid]
-   [app.config :as cf]
    [app.main.data.exports.files :as exports.files]
+   [app.main.data.persistence :as dps]
    [app.main.data.plugins :as dp]
    [app.main.data.workspace :as dw]
    [app.main.data.workspace.versions :as dwv]
    [app.main.repo :as rp]
    [app.main.store :as st]
-   [app.main.worker :as mw]
    [app.plugins.format :as format]
    [app.plugins.page :as page]
    [app.plugins.parser :as parser]
@@ -268,40 +267,31 @@
              (u/reject-not-valid reject :format (dm/str "Invalid type: " type))
 
              :else
-             (let [file       (u/locate-file id)
-                   features   (:features @st/state)
-                   team-id    (:current-team-id @st/state)
-                   format     (case format
-                                "zip"    :legacy-zip
-
-                                (if (contains? cf/flags :export-file-v3)
-                                  :binfile-v3
-                                  :binfile-v1))]
-               (->> (mw/ask-many!
-                     {:cmd :export-files
-                      :format format
-                      :type type
-                      :team-id team-id
-                      :features features
-                      :files [file]})
+             (let [file     (u/locate-file id)
+                   file-ids #{id}]
+               ;; Both API names return the current ZIP-based .penpot archive.
+               ;; The former worker command no longer exists.
+               (->> (rx/concat
+                     (->> (dps/force-persist-files-and-wait
+                           file-ids exports.files/save-wait-timeout-ms)
+                          (rx/tap st/emit!)
+                          (rx/ignore))
+                     (rx/defer
+                      (fn []
+                        (if (dps/unsaved-changes? @st/state file-ids)
+                          (rx/throw (ex-info "File still has unsaved changes"
+                                             {:type :export-unsaved-changes}))
+                          (exports.files/export-files :files [file] :type type)))))
                     (rx/mapcat
-                     (fn [msg]
-                       (.log js/console msg)
-                       (case (:type msg)
-                         :error
-                         (rx/throw (ex-info "cannot export file" {:type :export-file}))
-
-                         :progress
-                         (rx/empty)
-
-                         :finish
+                     (fn [{:keys [uri error]}]
+                       (if error
+                         (rx/throw (ex-info "Cannot export file" {:type :export-file :cause error}))
                          (http/send! {:method :get
-                                      :uri (:uri msg)
-                                      :mode :no-cors
+                                      :uri uri
                                       :response-type :buffer}))))
                     (rx/take 1)
                     (rx/map #(js/Uint8Array. (:body %)))
-                    (rx/tap #(st/emit! (se/event plugin-id "export-binary-files" :format format :type type)))
+                    (rx/tap #(st/emit! (se/event plugin-id "export-binary-files" :format :binfile-v3 :type type)))
                     (rx/subs! resolve reject))))))))
     :findVersions
     (fn [criteria]

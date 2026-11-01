@@ -400,21 +400,21 @@
          :dissolve
          {:animation-type animation-type
           :duration (obj/get animation "duration")
-          :easing (-> (obj/get animation "easing") parse-keyword)}
+          :easing (-> (obj/get animation "easing" "linear") parse-keyword)}
 
          :slide
          {:animation-type animation-type
           :way (-> (obj/get animation "way") parse-keyword)
           :direction (-> (obj/get animation "direction") parse-keyword)
           :duration (obj/get animation "duration")
-          :easing (-> (obj/get animation "easing") parse-keyword)
+          :easing (-> (obj/get animation "easing" "linear") parse-keyword)
           :offset-effect (boolean (obj/get animation "offsetEffect"))}
 
          :push
          {:animation-type animation-type
           :direction (-> (obj/get animation "direction") parse-keyword)
           :duration (obj/get animation "duration")
-          :easing (-> (obj/get animation "easing") parse-keyword)}
+          :easing (-> (obj/get animation "easing" "linear") parse-keyword)}
 
          nil)))))
 

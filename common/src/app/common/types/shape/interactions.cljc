@@ -729,8 +729,8 @@
     interactions))
 
 (defn remap-interactions
-  "Update all interactions whose destination points to a shape in the
-  map to the new id. And remove the ones whose destination does not exist
+  "Remap destinations and overlay position references to their new ids.
+  Remove interactions whose destination does not exist
   in the map nor in the objects tree."
   [interactions ids-map objects]
   (when (some? interactions)
@@ -740,7 +740,9 @@
                                       (contains? ids-map destination)
                                       (contains? objects destination)))))
                       (map (fn [interaction]
-                             (d/update-when interaction :destination #(get ids-map % %)))))]
+                             (-> interaction
+                                 (d/update-when :destination #(get ids-map % %))
+                                 (d/update-when :position-relative-to #(get ids-map % %))))))]
       (into [] xform interactions))))
 
 (defn remove-interactions

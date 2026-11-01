@@ -34,6 +34,20 @@
   [interaction]
   (sm/validate ctsi/schema:interaction interaction))
 
+(t/deftest test-animation-default-easing-validates
+  (doseq [animation [#js {:type "dissolve" :duration 150}
+                     #js {:type "slide" :way "in" :direction "up" :duration 150}
+                     #js {:type "push" :direction "left" :duration 150}]]
+    (t/testing (aget animation "type")
+      (let [parsed (parser/parse-animation animation)]
+        (t/is (= :linear (:easing parsed)))
+        (t/is (sm/validate ctsi/schema:animation parsed)))))
+
+  (t/testing "an explicit easing is preserved"
+    (t/is (= :ease-out
+             (:easing (parser/parse-animation
+                       #js {:type "dissolve" :duration 150 :easing "ease-out"}))))))
+
 (t/deftest test-overlay-relative-to-uses-viewer-position-reference
   (doseq [action-type ["open-overlay" "toggle-overlay"]]
     (t/testing action-type

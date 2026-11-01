@@ -905,6 +905,22 @@
         (t/is (= (:id frame3) (:destination (get new-interactions 2))))
         (t/is (nil? (:destination (get new-interactions 3))))))
 
+    (t/testing "Remap overlay position reference inside the cloned subtree"
+      (let [interaction (assoc i1 :position-relative-to (:id frame2))
+            result      (first (ctsi/remap-interactions [interaction] ids-map objects))]
+        (t/is (= (:id frame4) (:destination result)))
+        (t/is (= (:id frame5) (:position-relative-to result)))
+        (t/is (= (:id frame2) (:position-relative-to interaction)))))
+
+    (t/testing "Keep a position reference outside the cloned subtree"
+      (let [interaction (assoc i1 :position-relative-to (:id frame3))
+            result      (first (ctsi/remap-interactions [interaction] ids-map objects))]
+        (t/is (= (:id frame3) (:position-relative-to result)))))
+
+    (t/testing "Keep automatic overlay positioning"
+      (let [result (first (ctsi/remap-interactions [i1] ids-map objects))]
+        (t/is (nil? (:position-relative-to result)))))
+
     ;; `nil` interactions is a valid input when a shape has no prototype links yet.
     (t/testing "Remap nil interactions"
       (t/is (nil? (ctsi/remap-interactions nil ids-map objects))))))
