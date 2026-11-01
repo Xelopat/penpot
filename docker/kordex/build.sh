@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+cd /workspace/common
+clojure -T:build compile
+
 cd /workspace/frontend
 cljfmt check src/app/plugins/parser.cljs src/app/plugins/format.cljs \
   test/frontend_tests/plugins/parser_test.cljs \
