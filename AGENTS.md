@@ -2,10 +2,11 @@
 
 ## HARD RULES (always apply — no exceptions)
 
-- **Never `git push`, force-push, or modify `git origin`** (or any other remote).
-  The user pushes from their own shell. If a push is required to surface the
-  agent's work (e.g. force-push after an amend), state this in the response and
-  wait for the user to push. Do not change the remote URL, do not switch SSH↔HTTPS.
+- **Agents may commit and push task changes to this fork when the user has
+  authorized publication.** Authorization persists for the current task;
+  do not ask again for each push. Verify the target repository and branch
+  before pushing. Force-pushes and remote URL changes need separate explicit
+  authorization. Do not push to the upstream Penpot repository.
 - **Never amend a commit that has been pushed** unless the user explicitly asks.
   If the user pushes, treat that commit as final from the agent's side.
 - **Never edit `CHANGES.md` by hand** in commits or PRs. The changelog is

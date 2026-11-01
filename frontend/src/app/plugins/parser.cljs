@@ -489,7 +489,7 @@
           :toggle-overlay)
          {:action-type action-type
           :destination (-> (obj/get action "destination") (obj/get "$id"))
-          :relative-to (-> (obj/get action "relativeTo") (obj/get "$id"))
+          :position-relative-to (-> (obj/get action "relativeTo") (obj/get "$id"))
           :overlay-pos-type (or (-> (obj/get action "position") parse-keyword) :center)
           :overlay-position (-> (obj/get action "manualPositionLocation") parse-point)
           :close-click-outside (obj/get action "closeWhenClickOutside")

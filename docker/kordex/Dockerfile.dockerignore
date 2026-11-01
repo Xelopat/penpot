@@ -1,0 +1,7 @@
+.git
+**/node_modules
+**/.pnpm-store
+**/.shadow-cljs
+**/.cpcache
+**/target
+.ci-logs

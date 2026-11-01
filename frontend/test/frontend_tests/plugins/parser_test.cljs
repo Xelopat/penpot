@@ -15,9 +15,11 @@
    [cljs.test :as t :include-macros true]))
 
 (defn- overlay-action
-  [{:keys [type destination position manual-position-location]}]
+  [{:keys [type destination relative-to position manual-position-location]}]
   (let [action (js-obj "type" type
                        "destination" (js-obj "$id" destination))]
+    (when (some? relative-to)
+      (unchecked-set action "relativeTo" (js-obj "$id" relative-to)))
     (when (some? position)
       (unchecked-set action "position" position))
     (when (some? manual-position-location)
@@ -31,6 +33,23 @@
 (defn- valid-interaction?
   [interaction]
   (sm/validate ctsi/schema:interaction interaction))
+
+(t/deftest test-overlay-relative-to-uses-viewer-position-reference
+  (doseq [action-type ["open-overlay" "toggle-overlay"]]
+    (t/testing action-type
+      (let [reference-id (uuid/next)
+            result       (parse-overlay-interaction
+                          {:type action-type
+                           :destination (uuid/next)
+                           :relative-to reference-id})]
+        (t/is (= reference-id (:position-relative-to result)))
+        (t/is (not (contains? result :relative-to)))
+        (t/is (valid-interaction? result)))))
+
+  (t/testing "an omitted reference keeps automatic positioning"
+    (let [result (parse-overlay-interaction
+                  {:type "open-overlay" :destination (uuid/next)})]
+      (t/is (not (contains? result :position-relative-to))))))
 
 (t/deftest test-parse-point-returns-gpt-point-record
   ;; Regression test for issue #8409.

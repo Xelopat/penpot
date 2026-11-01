@@ -1,0 +1,3 @@
+services:
+  penpot-frontend:
+    image: ${KORDEX_FRONTEND_IMAGE:?Set KORDEX_FRONTEND_IMAGE to the tested fork image}

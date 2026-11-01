@@ -8,9 +8,26 @@
   (:require
    [app.plugins.exports :as exports]
    [app.plugins.format :as format]
+   [app.plugins.parser :as parser]
    [app.plugins.shadows :as shadows]
    [app.plugins.tracks :as tracks]
    [cljs.test :as t :include-macros true]))
+
+(t/deftest test-overlay-position-reference-survives-plugin-round-trip
+  ;; Proxies are only handles here; these functions do not read shape state.
+  (with-redefs [format/shape-proxy (fn [_plugin _file-id _page-id id]
+                                   #js {:$id id})]
+    (doseq [action-type [:open-overlay :toggle-overlay]]
+      (t/testing (name action-type)
+        (let [reference-id (random-uuid)
+              interaction  {:action-type action-type
+                            :destination (random-uuid)
+                            :position-relative-to reference-id
+                            :overlay-pos-type :center}
+              action       (format/format-action interaction nil nil nil)
+              parsed       (parser/parse-action action)]
+          (t/is (= reference-id (aget (aget action "relativeTo") "$id")))
+          (t/is (= interaction parsed)))))))
 
 (t/deftest test-format-array-always-returns-array
   (t/testing "nil collection returns an empty array"
