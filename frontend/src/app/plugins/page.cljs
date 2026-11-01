@@ -455,7 +455,7 @@
     :findCommentThreads
     (fn [criteria]
       (let [only-yours    (boolean (obj/get criteria "onlyYours" false))
-            show-resolved (boolean (obj/get criteria "showResolved" true))
+            show-resolved (boolean (obj/get criteria "showResolved" false))
             user-id       (:profile-id @st/state)]
         (js/Promise.
          (fn [resolve reject]
@@ -470,7 +470,7 @@
                   (rx/subs!
                    (fn [threads]
                      (let [threads
-                           (cond->> threads
+                           (cond->> (filter #(= id (:page-id %)) threads)
                              (not show-resolved)
                              (filter (comp not :is-resolved))
 

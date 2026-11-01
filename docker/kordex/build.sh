@@ -5,7 +5,7 @@ cd /workspace/common
 clojure -T:build compile
 revision="${2:-000000000000}"
 [[ "$revision" =~ ^[0-9a-f]{12,40}$ ]] || { echo 'Invalid build revision'; exit 1; }
-app_version="kordex-2.18.5-2-g${revision:0:12}"
+app_version="kordex-2.18.5-3-g${revision:0:12}"
 clojure -M -e "(require '[app.common.version :as v]) (assert (= \"2.18.5\" (:base (v/parse \"$app_version\"))))"
 clojure -M:dev:test --focus common-tests.types.shape-interactions-test \
   > /workspace/kordex-common-tests.log 2>&1 || {
@@ -17,9 +17,10 @@ cljfmt check src/app/common/types/shape/interactions.cljc \
   test/common_tests/types/shape_interactions_test.cljc
 
 cd /workspace/frontend
-cljfmt check src/app/plugins/parser.cljs src/app/plugins/format.cljs src/app/plugins/file.cljs \
+cljfmt check src/app/plugins/parser.cljs src/app/plugins/format.cljs src/app/plugins/file.cljs src/app/plugins/page.cljs \
   test/frontend_tests/plugins/parser_test.cljs \
-  test/frontend_tests/plugins/format_test.cljs test/frontend_tests/plugins/file_test.cljs
+  test/frontend_tests/plugins/format_test.cljs test/frontend_tests/plugins/file_test.cljs \
+  test/frontend_tests/plugins/comments_test.cljs
 
 # Build the upstream frontend, including its renderer and bundled plugins.
 # Keep the original build script as the source of truth for build order.
@@ -49,6 +50,12 @@ node target/tests/test.js --focus frontend-tests.plugins.file-test \
   exit 1
 }
 cat /workspace/kordex-file-tests.log
+node target/tests/test.js --focus frontend-tests.plugins.comments-test \
+  > /workspace/kordex-comment-tests.log 2>&1 || {
+  cat /workspace/kordex-comment-tests.log
+  exit 1
+}
+cat /workspace/kordex-comment-tests.log
 
 # A new index changes inline-script hashes; keep nginx's CSP in sync.
 python3 - <<'PY'

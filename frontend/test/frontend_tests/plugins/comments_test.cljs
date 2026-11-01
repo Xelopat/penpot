@@ -7,14 +7,43 @@
 (ns frontend-tests.plugins.comments-test
   (:require
    [app.main.data.comments :as dc]
+   [app.main.repo :as rp]
    [app.main.store :as st]
    [app.plugins.comments :as comments]
    [app.plugins.page :as page]
    [app.plugins.register :as r]
+   [beicon.v2.core :as rx]
    [cljs.test :as t :include-macros true]
    [frontend-tests.helpers.mock :as mock]))
 
 (def ^:private plugin-id "00000000-0000-0000-0000-000000000000")
+
+(t/deftest ^:async comment-threads-respect-page-and-visibility-filters
+  (let [file-id    (random-uuid)
+        page-id    (random-uuid)
+        profile-id (random-uuid)
+        proxy      (page/page-proxy plugin-id file-id page-id)
+        threads    [{:id (random-uuid) :seqn 1 :page-id page-id
+                     :is-resolved false :participants #{profile-id}}
+                    {:id (random-uuid) :seqn 2 :page-id page-id
+                     :is-resolved true :participants #{(random-uuid)}}
+                    {:id (random-uuid) :seqn 3 :page-id (random-uuid)
+                     :is-resolved false :participants #{profile-id}}]]
+    (await
+     (mock/with-mocks*
+       {st/state           (atom {:profile-id profile-id})
+        r/check-permission (constantly true)
+        rp/cmd!            (mock/stub
+                            (fn [command params]
+                              (t/is (= :get-comment-threads command))
+                              (t/is (= file-id (:file-id params)))
+                              (->> (rx/of threads) (rx/observe-on :async))))}
+       (let [visible (await (.findCommentThreads proxy))
+             all     (await (.findCommentThreads proxy #js {:showResolved true}))
+             yours   (await (.findCommentThreads proxy #js {:showResolved true :onlyYours true}))]
+         (t/is (= [1] (mapv #(.-seqNumber %) visible)))
+         (t/is (= [1 2] (mapv #(.-seqNumber %) all)))
+         (t/is (= [1] (mapv #(.-seqNumber %) yours))))))))
 
 (t/deftest comment-thread-remove-allows-the-owner
   (t/async done
