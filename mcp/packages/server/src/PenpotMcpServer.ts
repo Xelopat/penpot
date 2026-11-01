@@ -3,6 +3,8 @@ import { AsyncLocalStorage } from "async_hooks";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { ExecuteCodeTool } from "./tools/ExecuteCodeTool";
+import { AuditPrototypeTool } from "./tools/AuditPrototypeTool";
+import type { ToolAnnotations } from "@modelcontextprotocol/sdk/types.js";
 import { PluginBridge } from "./PluginBridge";
 import { RedisBridge } from "./RedisBridge";
 import { ConfigurationLoader } from "./ConfigurationLoader";
@@ -46,7 +48,7 @@ class ToolInfo {
     constructor(
         public readonly instance: Tool<any>,
         public readonly name: string,
-        public readonly config: { description: string; inputSchema: any }
+        public readonly config: { description: string; inputSchema: any; annotations?: ToolAnnotations }
     ) {}
 }
 
@@ -272,6 +274,7 @@ export class PenpotMcpServer {
     private initTools(): ToolInfo[] {
         const toolInstances: Tool<any>[] = [
             new ExecuteCodeTool(this),
+            new AuditPrototypeTool(this),
             new HighLevelOverviewTool(this),
             new PenpotApiInfoTool(this, this.apiDocs),
             new ExportShapeTool(this),
@@ -293,6 +296,7 @@ export class PenpotMcpServer {
             return new ToolInfo(instance, instance.getToolName(), {
                 description: instance.getToolDescription(),
                 inputSchema: instance.getInputSchema(),
+                annotations: instance.getToolAnnotations(),
             });
         });
     }

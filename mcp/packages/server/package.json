@@ -5,16 +5,17 @@
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
-    "build:server": "esbuild src/index.ts --bundle --platform=node --target=node18 --format=esm --outfile=dist/index.js --external:@modelcontextprotocol/* --external:ws --external:express --external:class-transformer --external:class-validator --external:reflect-metadata --external:pino --external:pino-pretty --external:pino-loki --external:js-yaml --external:sharp --external:nrepl-client --external:ioredis",
+    "build:audit": "node scripts/build-prototype-audit.js",
+    "build:server": "pnpm run build:audit && esbuild src/index.ts --bundle --platform=node --target=node18 --format=esm --outfile=dist/index.js --external:@modelcontextprotocol/* --external:ws --external:express --external:class-transformer --external:class-validator --external:reflect-metadata --external:pino --external:pino-pretty --external:pino-loki --external:js-yaml --external:sharp --external:nrepl-client --external:ioredis",
     "build": "pnpm run build:server && node scripts/copy-resources.js",
-    "build:types": "tsc --emitDeclarationOnly --outDir dist",
+    "build:types": "pnpm run build:audit && tsc --emitDeclarationOnly --outDir dist",
     "start": "node dist/index.js",
     "start:multi-user": "node dist/index.js --multi-user",
     "start:dev": "node --import ts-node/register src/index.ts",
     "start:dev:multi-user": "node --loader ts-node/esm src/index.ts --multi-user",
-    "test": "tsx --test src/*.test.ts",
+    "test": "pnpm run build:audit && tsx --test src/*.test.ts",
     "test:integration:export-sema": "tsx scripts/integration-test-export-image-semaphore.ts",
-    "types:check": "tsc --noEmit",
+    "types:check": "pnpm run build:audit && tsc --noEmit",
     "clean": "rm -rf dist/"
   },
   "keywords": [

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { ToolAnnotations } from "@modelcontextprotocol/sdk/types.js";
 import "reflect-metadata";
 import { TextResponse, ToolResponse } from "./ToolResponse";
 import type { PenpotMcpServer, SessionContext } from "./PenpotMcpServer";
@@ -107,6 +108,11 @@ export abstract class Tool<TArgs extends object> {
 
     public getInputSchema() {
         return this.inputSchema;
+    }
+
+    /** Optional protocol annotations describing a tool's effects. */
+    public getToolAnnotations(): ToolAnnotations | undefined {
+        return undefined;
     }
 
     /**

@@ -424,3 +424,12 @@ For many tasks, it can be critical to visually inspect the design. Remember to u
 
 --
 You have hereby read the 'Penpot High-Level Overview' and need not use a tool to read it again.
+# Compact prototype checks
+
+Use `audit_prototype` before dumping a large shape tree when diagnosing prototype links or overlays.
+The same audit is available through the existing `execute_code` tool: `return penpotUtils.auditPrototype({maxIssues:20});`.
+This compatibility helper needs only the updated MCP server, not a new browser plugin or connector tool catalog.
+It returns counts and at most 20 issue details by default, prioritizing errors. Increase `maxIssues` only when needed.
+`sameWidthNavigation` and `expectFixedOverlays` are opt-in expectations, not universal prototype rules.
+The audit is read-only and does not change the active page. Its results describe Plugin API structure, not viewer click behavior.
+

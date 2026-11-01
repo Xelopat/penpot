@@ -1,0 +1,18 @@
+# syntax=docker/dockerfile:1
+FROM --platform=$BUILDPLATFORM node:24-bookworm-slim AS build
+ENV pnpm_config_pm_on_fail=ignore
+RUN npm install --global pnpm@11.25.0
+WORKDIR /work/mcp
+COPY mcp/ ./
+RUN pnpm install --frozen-lockfile \
+    && pnpm --filter mcp-common build \
+    && pnpm --filter mcp-server types:check \
+    && pnpm --filter mcp-server test \
+    && pnpm --filter mcp-server build
+
+FROM penpotapp/mcp:2.18.5
+COPY --from=build --chown=node:node /work/mcp/packages/server/dist/index.js /opt/penpot/mcp/index.js
+COPY --from=build --chown=node:node /work/mcp/packages/server/dist/data/ /opt/penpot/mcp/data/
+ARG KORDEX_MCP_VERSION=2.18.5-kordex.1
+LABEL org.opencontainers.image.source="https://github.com/Xelopat/penpot" \
+      org.opencontainers.image.version=$KORDEX_MCP_VERSION

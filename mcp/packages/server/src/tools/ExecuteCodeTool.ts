@@ -6,6 +6,7 @@ import "reflect-metadata";
 import { PenpotMcpServer } from "../PenpotMcpServer";
 import { ExecuteCodePluginTask } from "../tasks/ExecuteCodePluginTask";
 import { ExecuteCodeTaskParams } from "@penpot/mcp-common";
+import { withPrototypeAuditHelper } from "../PrototypeAuditCode";
 
 /**
  * Arguments class for ExecuteCodeTool
@@ -48,6 +49,8 @@ export class ExecuteCodeTool extends Tool<ExecuteCodeArgs> {
             "which Penpot API functionality is necessary and how to use it.\n" +
             "You have access two main objects: `penpot` (the Penpot API, of type `Penpot`), `penpotUtils`, " +
             "and `storage`.\n" +
+            "For a compact read-only prototype check, use `return penpotUtils.auditPrototype({maxIssues:20});`. " +
+            "It checks structure; it does not verify viewer clicks or visual centering.\n" +
             "`storage` is an object in which arbitrary data can be stored, simply by adding a new attribute; " +
             "stored attributes can be referenced in future calls to this tool, so any intermediate results that " +
             "could come in handy later should be stored in `storage` instead of just a fleeting variable; " +
@@ -65,7 +68,7 @@ export class ExecuteCodeTool extends Tool<ExecuteCodeArgs> {
     }
 
     protected async executeCore(args: ExecuteCodeArgs): Promise<ToolResponse> {
-        const taskParams: ExecuteCodeTaskParams = { code: args.code };
+        const taskParams: ExecuteCodeTaskParams = { code: withPrototypeAuditHelper(args.code) };
         const task = new ExecuteCodePluginTask(taskParams);
         const result = await this.mcpServer.pluginBridge.executePluginTask(task);
 

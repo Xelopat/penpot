@@ -1,0 +1,6 @@
+.git
+**/node_modules
+**/.pnpm-store
+**/dist
+**/target
+**/src/generated/PrototypeAuditBundle.ts
