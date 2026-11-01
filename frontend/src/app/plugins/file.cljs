@@ -276,12 +276,13 @@
                            file-ids exports.files/save-wait-timeout-ms)
                           (rx/tap st/emit!)
                           (rx/ignore))
-                     (rx/defer
-                      (fn []
-                        (if (dps/unsaved-changes? @st/state file-ids)
-                          (rx/throw (ex-info "File still has unsaved changes"
-                                             {:type :export-unsaved-changes}))
-                          (exports.files/export-files :files [file] :type type)))))
+                     (->> (rx/of nil)
+                          (rx/mapcat
+                           (fn [_]
+                             (if (dps/unsaved-changes? @st/state file-ids)
+                               (rx/throw (ex-info "File still has unsaved changes"
+                                                  {:type :export-unsaved-changes}))
+                               (exports.files/export-files :files [file] :type type))))))
                     (rx/mapcat
                      (fn [{:keys [uri error]}]
                        (if error
