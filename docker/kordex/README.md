@@ -28,6 +28,14 @@
 Penpot **2.18.5**. Для другой версии сначала нужна отдельная сборка.
 
 Не запускайте обновление, пока сборка образа не завершилась успешно.
+После первой публикации GitHub создаёт пакет приватным. Для скачивания
+без авторизации откройте настройки пакета:
+<https://github.com/users/Xelopat/packages/container/penpot-frontend/settings>,
+выберите **Change visibility → Public** и подтвердите имя пакета.
+Вместо этого можно оставить пакет приватным и авторизоваться на сервере
+через `docker login ghcr.io` с токеном, имеющим право `read:packages`.
+Правила доступа: <https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry>.
+
 Сначала сохраните текущий образ интерфейса для отката:
 
 ```bash
