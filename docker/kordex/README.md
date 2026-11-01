@@ -1,30 +1,41 @@
-# Penpot 2.18.5: исправление наложений через MCP
+# Penpot 2.18.5: исправления Plugin API и MCP
 
 Ветка основана на официальной версии 2.18.5. Исправление связывает свойство
 `relativeTo` в Plugin API с полем `position-relative-to`, которое читает
-редактор и просмотрщик Penpot. Оно не меняет формат базы или серверный API.
+редактор и просмотрщик Penpot. Сборка `kordex.2` также исправляет:
+
+- перенос привязки окна на скопированный опорный объект при клонировании;
+- значение `linear` по умолчанию, когда у анимации не указан `easing`;
+- экспорт файла через текущий серверный механизм с ожиданием сохранения;
+- номер версии, который Plugin API раньше возвращал как `null`.
+
+Оба варианта `File.export('penpot')` и `File.export('zip')` возвращают текущий
+ZIP-контейнер формата `.penpot`, как экспорт из интерфейса. Удалённый старый
+экспортёр SVG-архивов не используется.
+
+Эти исправления не меняют формат базы или серверный API.
 Уже созданные ошибочные взаимодействия могут потребовать повторного задания
 привязки через MCP: обновление не переписывает существующие проекты.
 
 ## Готовность образа
 
 Образ публикуется **только после успешной сборки, проверки форматирования,
-статического анализа и тестов parser/format**. Состояние сборки:
+статического анализа и тестов привязок, анимаций и экспорта**. Состояние сборки:
 <https://github.com/Xelopat/penpot/actions/workflows/kordex-frontend.yml>.
 
 Имена образов:
 
-- `ghcr.io/xelopat/penpot-frontend:2.18.5-kordex.1` — текущая сборка исправления;
-- `ghcr.io/xelopat/penpot-frontend:2.18.5-kordex.1-<commit>` — конкретный коммит.
+- `ghcr.io/xelopat/penpot-frontend:2.18.5-kordex.2` — текущая сборка исправлений;
+- `ghcr.io/xelopat/penpot-frontend:2.18.5-kordex.2-<commit>` — конкретный коммит.
 
 Публикуются варианты Linux amd64 и arm64. Первая сборка может занять много
 времени: она собирает официальный интерфейс, WASM-рендерер и плагины.
 
-Сборка `2.18.5-kordex.1-ca94c6dcd4b2` прошла форматирование, статический
-анализ и 11 тестов с 72 проверками. Образ доступен без авторизации.
-Результат: <https://github.com/Xelopat/penpot/actions/runs/41297968276>.
+Сборка `2.18.5-kordex.2-076fad93a053` прошла форматирование, статический
+анализ и 39 тестов с 482 проверками. Образ доступен без авторизации.
+Результат: <https://github.com/Xelopat/penpot/actions/runs/41301154222>.
 Дайджест образа:
-`sha256:483f68bf93676406f54d2ee13bc1dd7566612426597d5cbaa6be52952a35bbaa`.
+`sha256:5e80db4662aea7af2f4a76a940e0c8e232cc9d4b0d51c6662429d02b94db90b1`.
 
 ## Установка на существующий сервер
 
@@ -57,7 +68,7 @@ printf '%s\n' "$rollback_image" > penpot-frontend-rollback.txt
 
 ```bash
 curl -fL 'https://raw.githubusercontent.com/Xelopat/penpot/codex/mcp-overlay-relative-to/docker/kordex/compose.override.yaml' -o docker-compose.kordex.yaml
-export KORDEX_FRONTEND_IMAGE=ghcr.io/xelopat/penpot-frontend:2.18.5-kordex.1
+export KORDEX_FRONTEND_IMAGE=ghcr.io/xelopat/penpot-frontend:2.18.5-kordex.2
 docker compose -f docker-compose.yaml -f docker-compose.kordex.yaml pull penpot-frontend
 docker compose -f docker-compose.yaml -f docker-compose.kordex.yaml up -d --no-deps penpot-frontend
 docker compose -f docker-compose.yaml -f docker-compose.kordex.yaml logs --tail=50 penpot-frontend
@@ -74,7 +85,7 @@ docker compose -f docker-compose.yaml -f docker-compose.kordex.yaml logs --tail=
 прокрутки. Не считайте проверку завершённой только по ответу MCP.
 
 Чтобы последующие запуски сохраняли исправление, добавьте
-`KORDEX_FRONTEND_IMAGE=ghcr.io/xelopat/penpot-frontend:2.18.5-kordex.1` в ваш
+`KORDEX_FRONTEND_IMAGE=ghcr.io/xelopat/penpot-frontend:2.18.5-kordex.2` в ваш
 существующий `.env` и используйте оба файла `-f`. Команда только с исходным
 файлом вернёт официальный образ интерфейса.
 
