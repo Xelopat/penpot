@@ -6,6 +6,7 @@
 
 (ns frontend-tests.data.viewer-test
   (:require
+   [app.common.geom.point :as gpt]
    [app.common.uuid :as uuid]
    [app.main.data.viewer :as dv]
    [app.main.router :as rt]
@@ -122,3 +123,56 @@
           {:keys [params]} (some-> (first events) deref)]
       (t/is (= 1 (count events)))
       (t/is (not (contains? params :zoom))))))
+
+(defn- overlay-state
+  [frames overlays]
+  {:route {:query-params {:page-id (str page-id)}}
+   :viewer {:pages {page-id {:all-frames frames}}}
+   :viewer-overlays overlays})
+
+(def ^:private dissolve
+  {:animation-type :dissolve :duration 200 :easing :ease-out})
+
+(t/deftest swap-overlay-replaces-without-stacking
+  (let [tab-a  {:id (uuid/custom 2 1)}
+        tab-b  {:id (uuid/custom 2 2)}
+        open-a {:id (:id tab-a) :frame tab-a :anchor :anchor}]
+
+    (t/testing "without animation the replaced overlay is removed at once"
+      (let [state  (overlay-state [tab-a tab-b] [open-a])
+            result (ptk/update (dv/swap-overlay [(:id tab-a)] (:id tab-b) (gpt/point 0 0)
+                                                [:top :left] false false nil false
+                                                {:anchor :anchor})
+                               state)]
+        (t/is (= [(:id tab-b)] (mapv :id (:viewer-overlays result))))
+        (t/is (= :anchor (-> result :viewer-overlays first :anchor)))))
+
+    (t/testing "with animation the replaced overlay stays below until it ends"
+      (let [state  (overlay-state [tab-a tab-b] [open-a])
+            result (ptk/update (dv/swap-overlay [(:id tab-a)] (:id tab-b) (gpt/point 0 0)
+                                                [:top :left] false false dissolve false nil)
+                               state)
+            done   (ptk/update (dv/complete-animation) result)]
+        (t/is (= [(:id tab-a) (:id tab-b)] (mapv :id (:viewer-overlays result))))
+        (t/is (= (:id tab-b) (-> result :viewer-overlays first :replaced-by)))
+        (t/is (= {:kind :swap-overlay
+                  :overlay-id (:id tab-b)
+                  :from-overlay-id (:id tab-a)
+                  :animation dissolve}
+                 (get-in result [:viewer-animations (:id tab-b)])))
+        (t/is (= [(:id tab-b)] (mapv :id (:viewer-overlays done))))))
+
+    (t/testing "swapping to an overlay already shown only drops the others"
+      (let [state  (overlay-state [tab-a tab-b] [open-a {:id (:id tab-b) :frame tab-b}])
+            result (ptk/update (dv/swap-overlay [(:id tab-a)] (:id tab-b) (gpt/point 0 0)
+                                                [:top :left] false false dissolve false nil)
+                               state)]
+        (t/is (= [(:id tab-b)] (mapv :id (:viewer-overlays result))))
+        (t/is (nil? (:viewer-animations result)))))
+
+    (t/testing "a toggle ignores overlays that are being replaced"
+      (let [state  (overlay-state [tab-a] [(assoc open-a :replaced-by (:id tab-b))])
+            result (ptk/update (dv/toggle-overlay (:id tab-a) (gpt/point 0 0) [:top :left]
+                                                  false false nil false)
+                               state)]
+        (t/is (= 2 (count (:viewer-overlays result))))))))

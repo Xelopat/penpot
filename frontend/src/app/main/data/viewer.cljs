@@ -609,12 +609,22 @@
     (update [_ state]
       (assoc-in state [:inspect-exports-cache shapes-key] exports))))
 
+(defn- remove-replaced-overlays
+  "Remove the overlays that were swapped by another one, once the new one
+  is fully visible."
+  [state]
+  (update state :viewer-overlays
+          (fn [overlays]
+            (d/removev :replaced-by overlays))))
+
 (defn complete-animation
   []
   (ptk/reify ::complete-animation
     ptk/UpdateEvent
     (update [_ state]
-      (dissoc state :viewer-animations))))
+      (-> state
+          (dissoc :viewer-animations)
+          (remove-replaced-overlays)))))
 
 ;; --- Navigation inside page
 
@@ -703,24 +713,38 @@
 ;; --- Overlays
 
 (defn- open-overlay*
-  [state frame position snap-to close-click-outside background-overlay animation fixed-source?]
-  (cond-> state
-    :always
-    (update :viewer-overlays conj
-            {:frame frame
-             :id (:id frame)
-             :position position
-             :snap-to snap-to
-             :close-click-outside close-click-outside
-             :background-overlay background-overlay
-             :animation animation
-             :fixed-source? fixed-source?})
+  ([state frame position snap-to close-click-outside background-overlay animation fixed-source?]
+   (open-overlay* state frame position snap-to close-click-outside background-overlay animation fixed-source? nil))
+  ([state frame position snap-to close-click-outside background-overlay animation fixed-source? opts]
+   ;; `opts` may contain:
+   ;;   :anchor        what the overlay is positioned against (a shape id,
+   ;;                  :viewport or nil), used to find overlays to swap
+   ;;   :source-id     the shape that opened the overlay
+   ;;   :hover-source? the overlay was opened while hovering its source
+   ;;   :swap-from     the overlay this one replaces
+   (cond-> state
+     :always
+     (update :viewer-overlays conj
+             (merge {:frame frame
+                     :id (:id frame)
+                     :position position
+                     :snap-to snap-to
+                     :close-click-outside close-click-outside
+                     :background-overlay background-overlay
+                     :animation animation
+                     :fixed-source? fixed-source?}
+                    (dissoc opts :swap-from)))
 
-    (some? animation)
-    (assoc-in [:viewer-animations (:id frame)]
-              {:kind :open-overlay
-               :overlay-id (:id frame)
-               :animation animation})))
+     (some? animation)
+     (assoc-in [:viewer-animations (:id frame)]
+               (if-let [swap-from (:swap-from opts)]
+                 {:kind :swap-overlay
+                  :overlay-id (:id frame)
+                  :from-overlay-id swap-from
+                  :animation animation}
+                 {:kind :open-overlay
+                  :overlay-id (:id frame)
+                  :animation animation})))))
 
 (defn- close-overlay*
   [state frame-id animation]
@@ -733,8 +757,8 @@
                :overlay-id frame-id
                :animation animation})))
 
-(defn open-overlay
-  [frame-id position snap-to close-click-outside background-overlay animation fixed-source?]
+(defn- open-overlay-event
+  [frame-id position snap-to close-click-outside background-overlay animation fixed-source? opts mode]
   (dm/assert! (uuid? frame-id))
   (dm/assert! (gpt/point? position))
   (dm/assert! (or (nil? close-click-outside)
@@ -751,8 +775,12 @@
             page-id  (some-> (:page-id qparams) uuid/parse)
             frames   (dm/get-in state [:viewer :pages page-id :all-frames])
             frame    (d/seek #(= (:id %) frame-id) frames)
-            overlays (:viewer-overlays state)]
-        (if-not (some #(= (:frame %) frame) overlays)
+            overlays (:viewer-overlays state)
+            open?    (some #(and (= (:frame %) frame)
+                                 (not (:replaced-by %)))
+                           overlays)]
+        (cond
+          (not open?)
           (open-overlay* state
                          frame
                          position
@@ -760,42 +788,84 @@
                          close-click-outside
                          background-overlay
                          animation
-                         fixed-source?)
+                         fixed-source?
+                         opts)
+
+          (= mode ::toggle)
+          (close-overlay* state
+                          (:id frame)
+                          (ctsi/invert-direction animation))
+
+          :else
           state)))))
 
+(defn open-overlay
+  ([frame-id position snap-to close-click-outside background-overlay animation fixed-source?]
+   (open-overlay frame-id position snap-to close-click-outside background-overlay animation fixed-source? nil))
+  ([frame-id position snap-to close-click-outside background-overlay animation fixed-source? opts]
+   (open-overlay-event frame-id position snap-to close-click-outside background-overlay animation fixed-source? opts ::open)))
 
 (defn toggle-overlay
-  [frame-id position snap-to close-click-outside background-overlay animation fixed-source?]
+  ([frame-id position snap-to close-click-outside background-overlay animation fixed-source?]
+   (toggle-overlay frame-id position snap-to close-click-outside background-overlay animation fixed-source? nil))
+  ([frame-id position snap-to close-click-outside background-overlay animation fixed-source? opts]
+   (open-overlay-event frame-id position snap-to close-click-outside background-overlay animation fixed-source? opts ::toggle)))
+
+(defn swap-overlay
+  "Open the overlay `frame-id` in place of the overlays `replace-ids`.
+  The replaced overlays stay below the new one until it is fully shown,
+  so the background never shows through, and are removed afterwards."
+  [replace-ids frame-id position snap-to close-click-outside background-overlay animation fixed-source? opts]
   (dm/assert! (uuid? frame-id))
   (dm/assert! (gpt/point? position))
-  (dm/assert! (or (nil? close-click-outside)
-                  (boolean? close-click-outside)))
-  (dm/assert! (or (nil? background-overlay)
-                  (boolean? background-overlay)))
   (dm/assert! (or (nil? animation)
                   (ctsi/check-animation! animation)))
 
-  (ptk/reify ::toggle-overlay
+  (ptk/reify ::swap-overlay
     ptk/UpdateEvent
     (update [_ state]
-      (let [route    (:route state)
-            qparams  (:query-params route)
-            page-id  (some-> (:page-id qparams) uuid/parse)
-            frames   (get-in state [:viewer :pages page-id :all-frames])
-            frame    (d/seek #(= (:id %) frame-id) frames)
-            overlays (:viewer-overlays state)]
-        (if-not (some #(= (:frame %) frame) overlays)
-          (open-overlay* state
-                         frame
-                         position
-                         snap-to
-                         close-click-outside
-                         background-overlay
-                         animation
-                         fixed-source?)
-          (close-overlay* state
-                          (:id frame)
-                          (ctsi/invert-direction animation)))))))
+      (let [route       (:route state)
+            qparams     (:query-params route)
+            page-id     (some-> (:page-id qparams) uuid/parse)
+            frames      (dm/get-in state [:viewer :pages page-id :all-frames])
+            frame       (d/seek #(= (:id %) frame-id) frames)
+            replace-ids (into #{} (remove #(= % frame-id)) replace-ids)
+            overlays    (:viewer-overlays state)
+            open?       (some #(= (:id %) frame-id) overlays)
+            swap-from   (->> overlays
+                             (filter #(contains? replace-ids (:id %)))
+                             (last)
+                             :id)]
+        (cond
+          (nil? frame)
+          state
+
+          ;; Already visible: only drop the others
+          open?
+          (update state :viewer-overlays
+                  (fn [overlays]
+                    (d/removev #(contains? replace-ids (:id %)) overlays)))
+
+          :else
+          (-> state
+              (update :viewer-overlays
+                      (fn [overlays]
+                        (mapv #(cond-> %
+                                 (contains? replace-ids (:id %))
+                                 (assoc :replaced-by frame-id))
+                              overlays)))
+              (open-overlay* frame
+                             position
+                             snap-to
+                             close-click-outside
+                             background-overlay
+                             animation
+                             fixed-source?
+                             (cond-> opts
+                               (some? swap-from)
+                               (assoc :swap-from swap-from)))
+              (cond-> (nil? animation)
+                (remove-replaced-overlays))))))))
 
 (defn close-overlay
   ([frame-id] (close-overlay frame-id nil))

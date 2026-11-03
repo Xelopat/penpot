@@ -60,10 +60,32 @@
         (t/is (not (contains? result :relative-to)))
         (t/is (valid-interaction? result)))))
 
-  (t/testing "an omitted reference keeps automatic positioning"
+  (t/testing "an omitted reference positions the overlay in the viewport"
     (let [result (parse-overlay-interaction
                   {:type "open-overlay" :destination (uuid/next)})]
-      (t/is (not (contains? result :position-relative-to))))))
+      (t/is (true? (:relative-to-viewport result)))
+      (t/is (not (contains? result :position-relative-to)))
+      (t/is (valid-interaction? result))))
+
+  (t/testing "an omitted reference of a manual position stays on the trigger"
+    (let [result (parse-overlay-interaction
+                  {:type "open-overlay" :destination (uuid/next) :position "manual"})]
+      (t/is (not (contains? result :relative-to-viewport)))))
+
+  (t/testing "a null reference keeps the base board positioning"
+    (let [action (overlay-action {:type "open-overlay" :destination (uuid/next)})
+          _      (unchecked-set action "relativeTo" nil)
+          result (parser/parse-interaction "click" action nil)]
+      (t/is (not (contains? result :relative-to-viewport)))
+      (t/is (not (contains? result :position-relative-to)))))
+
+  (t/testing "the viewport reference"
+    (doseq [action-type ["open-overlay" "toggle-overlay" "swap-overlay"]]
+      (let [action (overlay-action {:type action-type :destination (uuid/next)})
+            _      (unchecked-set action "relativeTo" "viewport")
+            result (parser/parse-interaction "click" action nil)]
+        (t/is (true? (:relative-to-viewport result)))
+        (t/is (valid-interaction? result))))))
 
 (t/deftest test-parse-point-returns-gpt-point-record
   ;; Regression test for issue #8409.
@@ -173,8 +195,8 @@
       (t/is (valid-interaction? result)))))
 
 (t/deftest test-parse-close-overlay-without-animation-validates
-  (t/testing "close-overlay without animation parses and validates"
-    (let [result (parser/parse-interaction "click" #js {:type "close-overlay"} nil)]
+  (t/testing "close-overlay with a null animation parses and validates"
+    (let [result (parser/parse-interaction "click" #js {:type "close-overlay" :animation nil} nil)]
       (t/is (= {:event-type :click
                 :action-type :close-overlay}
                result))
@@ -186,7 +208,8 @@
           result         (parser/parse-interaction
                           "click"
                           #js {:type "close-overlay"
-                               :destination #js {"$id" destination-id}}
+                               :destination #js {"$id" destination-id}
+                               :animation nil}
                           nil)]
       (t/is (= destination-id (:destination result)))
       (t/is (false? (contains? result :animation)))
@@ -206,3 +229,84 @@
                (:animation result)))
       (t/is (true? (sm/validate ctsi/schema:interaction result))))))
 
+(t/deftest test-default-animation
+  (t/testing "an omitted animation gets a short dissolve"
+    (let [result (parser/parse-interaction "click" #js {:type "close-overlay"} nil)]
+      (t/is (= {:animation-type :dissolve :duration 250 :easing :ease-out}
+               (:animation result)))
+      (t/is (valid-interaction? result))))
+
+  (t/testing "hover transitions are shorter"
+    (let [result (parse-overlay-interaction {:type "open-overlay" :destination (uuid/next)})
+          hover  (parser/parse-interaction "mouse-enter"
+                                           (overlay-action {:type "open-overlay"
+                                                            :destination (uuid/next)})
+                                           nil)]
+      (t/is (= 250 (-> result :animation :duration)))
+      (t/is (= 150 (-> hover :animation :duration)))))
+
+  (t/testing "actions without animation get none"
+    (let [result (parser/parse-interaction "click" #js {:type "open-url" :url "https://penpot.app"} nil)]
+      (t/is (not (contains? result :animation)))
+      (t/is (valid-interaction? result))))
+
+  (t/testing "resolve-animation turns null into a removal for patching"
+    (t/is (= {:action-type :navigate :animation nil}
+             (parser/resolve-animation
+              (parser/parse-action #js {:type "navigate-to" :animation nil})
+              :click)))))
+
+(t/deftest test-parse-smart-animate
+  (t/testing "smart animate defaults"
+    (let [parsed (parser/parse-animation #js {:type "smart-animate"})]
+      (t/is (= {:animation-type :smart-animate :duration 300 :easing :ease-out} parsed))
+      (t/is (sm/validate ctsi/schema:animation parsed))))
+
+  (t/testing "smart animate on navigate"
+    (let [result (parser/parse-interaction
+                  "click"
+                  #js {:type "navigate-to"
+                       :destination #js {"$id" (uuid/next)}
+                       :animation #js {:type "smart-animate" :duration 400 :easing "ease-in-out"}}
+                  nil)]
+      (t/is (= {:animation-type :smart-animate :duration 400 :easing :ease-in-out}
+               (:animation result)))
+      (t/is (valid-interaction? result)))))
+
+(t/deftest test-parse-scroll-to
+  (let [destination (uuid/next)]
+    (t/testing "scroll to with offset and default smooth scroll"
+      (let [result (parser/parse-interaction
+                    "click"
+                    #js {:type "scroll-to"
+                         :destination #js {"$id" destination}
+                         :scrollOffset #js {:x 0 :y -80}}
+                    nil)]
+        (t/is (= :scroll-to (:action-type result)))
+        (t/is (= destination (:destination result)))
+        (t/is (= (gpt/point 0 -80) (:scroll-offset result)))
+        (t/is (= {:animation-type :smart-animate :duration 400 :easing :ease-in-out}
+                 (:animation result)))
+        (t/is (valid-interaction? result))))
+
+    (t/testing "instant scroll"
+      (let [result (parser/parse-interaction
+                    "click"
+                    #js {:type "scroll-to"
+                         :destination #js {"$id" destination}
+                         :animation nil}
+                    nil)]
+        (t/is (not (contains? result :animation)))
+        (t/is (valid-interaction? result))))))
+
+(t/deftest test-parse-swap-overlay
+  (let [destination (uuid/next)
+        anchor      (uuid/next)
+        result      (parse-overlay-interaction {:type "swap-overlay"
+                                                :destination destination
+                                                :relative-to anchor
+                                                :position "top-left"})]
+    (t/is (= :swap-overlay (:action-type result)))
+    (t/is (= anchor (:position-relative-to result)))
+    (t/is (= :top-left (:overlay-pos-type result)))
+    (t/is (valid-interaction? result))))

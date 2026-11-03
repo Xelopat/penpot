@@ -178,7 +178,8 @@
                   (fn [shape]
                     (let [new-interaction (-> ctsi/default-interaction
                                               (ctsi/set-destination destination)
-                                              (assoc :position-relative-to (:id shape)))]
+                                              (assoc :position-relative-to (:id shape))
+                                              (assoc :animation (ctsi/default-animation :navigate :click)))]
                       (cls/add-new-interaction shape new-interaction)))))
 
           (when destination

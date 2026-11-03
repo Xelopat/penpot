@@ -9,6 +9,7 @@
   (:require
    [app.common.data :as d]
    [app.common.files.helpers :as cfh]
+   [app.common.geom.point :as gpt]
    [app.common.types.page :as ctp]
    [app.common.types.shape-tree :as ctt]
    [app.common.types.shape.interactions :as ctsi]
@@ -35,8 +36,8 @@
 (defn- event-type-names
   []
   {:click       (tr "workspace.options.interaction-on-click")
+   :mouse-over  (tr "workspace.options.interaction-while-hovering")
    ;; TODO: need more UX research
-   ;; :mouse-over (tr "workspace.options.interaction-while-hovering")
    ;; :mouse-press (tr "workspace.options.interaction-while-pressing")
    :mouse-enter (tr "workspace.options.interaction-mouse-enter")
    :mouse-leave (tr "workspace.options.interaction-mouse-leave")
@@ -55,6 +56,10 @@
                         (get destination :name (tr "workspace.options.interaction-none")))
     :toggle-overlay (tr "workspace.options.interaction-toggle-overlay-dest"
                         (get destination :name (tr "workspace.options.interaction-none")))
+    :swap-overlay   (tr "workspace.options.interaction-swap-overlay-dest"
+                        (get destination :name (tr "workspace.options.interaction-none")))
+    :scroll-to      (tr "workspace.options.interaction-scroll-to-dest"
+                        (get destination :name (tr "workspace.options.interaction-none")))
     :close-overlay  (tr "workspace.options.interaction-close-overlay-dest"
                         (get destination :name (tr "workspace.options.interaction-self")))
     :prev-screen    (tr "workspace.options.interaction-prev-screen")
@@ -69,6 +74,21 @@
        (map (fn [frame]
               {:value (str (:id frame))
                :label (:name frame)}))))
+
+(defn- get-scroll-targets-options
+  "Layers of the board holding `shape`, in reading order, as scroll-to
+  destinations. The board itself scrolls back to the top."
+  [objects shape]
+  (when-let [frame (cfh/get-root-frame objects (:id shape))]
+    (->> (cfh/get-children objects (:id frame))
+         (remove :hidden)
+         (sort-by (fn [child] [(-> child :selrect :y) (-> child :selrect :x)]))
+         (cons frame)
+         (map (fn [target]
+                {:value (str (:id target))
+                 :label (if (= (:id target) (:id frame))
+                          (str (:name frame) " (" (tr "workspace.options.interaction-scroll-top") ")")
+                          (:name target))})))))
 
 (defn- get-shared-frames-options
   [shared-frames]
@@ -209,7 +229,17 @@
          (mf/deps index update-interaction)
          (fn [event]
            (let [value (keyword event)]
-             (update-interaction index #(ctsi/set-action-type % value)))))
+             (update-interaction
+              index
+              (fn [interaction]
+                (let [result (ctsi/set-action-type interaction value)]
+                  ;; Keep the transition animated when the previous
+                  ;; animation is not valid for the new action
+                  (if (and (some? (:animation interaction))
+                           (nil? (:animation result)))
+                    (d/assoc-when result :animation
+                                  (ctsi/default-animation value (:event-type result)))
+                    result)))))))
 
         change-delay
         (mf/use-fn
@@ -229,8 +259,16 @@
         (mf/use-fn
          (mf/deps index update-interaction)
          (fn [event]
-           (let [value (uuid/parse* event)]
-             (update-interaction index #(ctsi/set-position-relative-to % value)))))
+           (if (= event "viewport")
+             (update-interaction index #(ctsi/set-relative-to-viewport % true))
+             (let [value (uuid/parse* event)]
+               (update-interaction index #(ctsi/set-position-relative-to % value))))))
+
+        change-scroll-offset
+        (mf/use-fn
+         (mf/deps index update-interaction)
+         (fn [value]
+           (update-interaction index #(ctsi/set-scroll-offset % (gpt/point 0 value)))))
 
         change-preserve-scroll
         (mf/use-fn
@@ -335,8 +373,8 @@
 
 
         event-type-options   (-> [{:value :click       :label (tr "workspace.options.interaction-on-click")}
+                                  {:value :mouse-over  :label (tr "workspace.options.interaction-while-hovering")}
                                   ;; TODO: need more UX research
-                                  ;; :mouse-over (tr "workspace.options.interaction-while-hovering")
                                   ;; :mouse-press (tr "workspace.options.interaction-while-pressing")
                                   {:value :mouse-enter :label (tr "workspace.options.interaction-mouse-enter")}
                                   {:value :mouse-leave :label (tr "workspace.options.interaction-mouse-leave")}]
@@ -346,7 +384,9 @@
         action-type-options [{:value :navigate       :label (tr "workspace.options.interaction-navigate-to")}
                              {:value :open-overlay   :label (tr "workspace.options.interaction-open-overlay")}
                              {:value :toggle-overlay :label (tr "workspace.options.interaction-toggle-overlay")}
+                             {:value :swap-overlay   :label (tr "workspace.options.interaction-swap-overlay")}
                              {:value :close-overlay  :label (tr "workspace.options.interaction-close-overlay")}
+                             {:value :scroll-to      :label (tr "workspace.options.interaction-scroll-to")}
                              {:value :prev-screen    :label (tr "workspace.options.interaction-prev-screen")}
                              {:value :open-url       :label (tr "workspace.options.interaction-open-url")}]
 
@@ -355,17 +395,22 @@
         default-opts        [(if (= (:action-type interaction) :close-overlay)
                                {:value "" :label (tr "workspace.options.interaction-self")}
                                {:value "" :label (tr "workspace.options.interaction-none")})]
+        scroll-to?          (= :scroll-to (:action-type interaction))
+
         destination-options
-        (mf/with-memo [frames-opts default-opts]
-          (let [sorted-frames-opts (sort-by :label frames-opts)]
-            (d/concat-vec default-opts sorted-frames-opts)))
+        (mf/with-memo [frames-opts default-opts scroll-to? objects shape]
+          (if scroll-to?
+            (d/concat-vec default-opts (get-scroll-targets-options objects shape))
+            (let [sorted-frames-opts (sort-by :label frames-opts)]
+              (d/concat-vec default-opts sorted-frames-opts))))
 
         shape-parents-opts (get-shared-frames-options shape-parents)
 
         relative-to-opts
         (mf/with-memo [shape-parents-opts]
           (if (not= (:overlay-pos-type interaction) :manual)
-            (d/concat-vec [{:value "" :label (tr "workspace.options.interaction-auto")}]
+            (d/concat-vec [{:value "viewport" :label (tr "workspace.options.interaction-viewport")}
+                           {:value "" :label (tr "workspace.options.interaction-auto")}]
                           shape-parents-opts
                           [{:value (str (:id shape)) :label (str (:name shape) " (" (tr "workspace.options.interaction-self") ")")}])
             [{:value (str (:id shape)) :label (str (:name shape) " (" (tr "workspace.options.interaction-self") ")")}]))
@@ -383,11 +428,22 @@
                               {:value :dissolve :label (tr "workspace.options.interaction-animation-dissolve")}
                               {:value :slide    :label (tr "workspace.options.interaction-animation-slide")}]
 
+        smart-animation-opt  {:value :smart-animate :label (tr "workspace.options.interaction-animation-smart")}
+
         animation-opts
         (mf/with-memo [basic-animation-opts]
-          (if (ctsi/allow-push? (:action-type interaction))
-            (d/concat-vec basic-animation-opts [{:value :push :label (tr "workspace.options.interaction-animation-push")}])
-            basic-animation-opts))
+          (let [action-type (:action-type interaction)]
+            (cond
+              (= action-type :scroll-to)
+              [(first basic-animation-opts) smart-animation-opt]
+
+              :else
+              (cond-> basic-animation-opts
+                (ctsi/allow-push? action-type)
+                (conj {:value :push :label (tr "workspace.options.interaction-animation-push")})
+
+                (ctsi/allow-smart-animate? action-type)
+                (conj smart-animation-opt)))))
 
         easing-options [{:icon :easing-linear      :value :linear      :label (tr "workspace.options.interaction-easing-linear")}
                         {:icon :easing-ease        :value :ease        :label (tr "workspace.options.interaction-easing-ease")}
@@ -454,6 +510,18 @@
                         :searchable? true
                         :search-placeholder (tr "workspace.options.interaction-destination")}]]])
 
+        ;; Scroll offset
+        (when (ctsi/has-scroll-offset? interaction)
+          [:div {:class (stl/css :interaction-row)}
+           [:div {:class (stl/css :interaction-row-label)}
+            [:div {:class (stl/css :interaction-row-name)}
+             (tr "workspace.options.interaction-scroll-offset")]]
+           [:div {:class (stl/css :interaction-row-input)}
+            [:> numeric-input* {:icon i/character-y
+                                :property (tr "workspace.options.interaction-scroll-offset")
+                                :on-change change-scroll-offset
+                                :value (-> interaction :scroll-offset :y (or 0))}]]])
+
         ;; Preserve scroll
         (when (ctsi/has-preserve-scroll interaction)
           [:div {:class (stl/css :interaction-row)}
@@ -493,7 +561,9 @@
              [:div {:class (stl/css :interaction-row-name)}
               (tr "workspace.options.interaction-relative-to")]]
             [:div {:class (stl/css :interaction-row-select)}
-             [:& select {:default-value  (str (:position-relative-to interaction))
+             [:& select {:default-value  (if (ctsi/relative-to-viewport? interaction)
+                                           "viewport"
+                                           (str (:position-relative-to interaction)))
                          :options relative-to-opts
                          :on-change change-position-relative-to}]]]
 

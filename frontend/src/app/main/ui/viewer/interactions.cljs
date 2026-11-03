@@ -540,106 +540,70 @@
                       #js {:duration (:duration animation)
                            :easing (name (:easing animation))})))))
 
+(defn- slide-in-offset
+  "Translation that places the overlay just outside the visible area of
+  the viewer, on the side it slides in from when moving in `direction`."
+  [overlay-viewport direction]
+  (let [rect (dom/get-bounding-rect overlay-viewport)
+        area (or (some-> (dom/get-element "viewer-section") dom/get-bounding-rect)
+                 rect)]
+    (case direction
+      :right [(- (:left area) (:right rect)) 0]
+      :left  [(- (:right area) (:left rect)) 0]
+      :up    [0 (- (:bottom area) (:top rect))]
+      :down  [0 (- (:top area) (:bottom rect))]
+      [0 0])))
+
+(defn- translate
+  [[x y]]
+  (str "translate(" x "px, " y "px)"))
+
+(def ^:private opposite-direction
+  {:right :left :left :right :up :down :down :up})
+
 (defn animate-open-overlay
-  [animation overlay-viewport
-   wrapper-size overlay-size overlay-position]
+  [animation overlay-viewport]
   (when (some? overlay-viewport)
-    (case (:animation-type animation)
-
-      :dissolve
-      (dom/animate! overlay-viewport
-                    [#js {:opacity "0"}
-                     #js {:opacity "100"}]
-                    #js {:duration (:duration animation)
-                         :easing (name (:easing animation))}
-                    #(st/emit! (dv/complete-animation)))
-
-      :slide
-      (case (:direction animation) ;; way and offset-effect are ignored
-
-        :right
+    (let [timing #js {:duration (:duration animation)
+                      :easing (name (:easing animation :linear))}
+          done   #(st/emit! (dv/complete-animation))]
+      (case (:animation-type animation)
+        :slide ;; way and offset-effect are ignored
         (dom/animate! overlay-viewport
-                      [#js {:left (str "-" (:width overlay-size) "px")}
-                       #js {:left (str (:x overlay-position) "px")}]
-                      #js {:duration (:duration animation)
-                           :easing (name (:easing animation))}
-                      #(st/emit! (dv/complete-animation)))
+                      [#js {:transform (translate (slide-in-offset overlay-viewport (:direction animation)))}
+                       #js {:transform "none"}]
+                      timing
+                      done)
 
-        :left
+        ;; Dissolve, and animations not meant for overlays
         (dom/animate! overlay-viewport
-                      [#js {:left (str (:width wrapper-size) "px")}
-                       #js {:left (str (:x overlay-position) "px")}]
-                      #js {:duration (:duration animation)
-                           :easing (name (:easing animation))}
-                      #(st/emit! (dv/complete-animation)))
-
-        :up
-        (dom/animate! overlay-viewport
-                      [#js {:top (str (:height wrapper-size) "px")}
-                       #js {:top (str (:y overlay-position) "px")}]
-                      #js {:duration (:duration animation)
-                           :easing (name (:easing animation))}
-                      #(st/emit! (dv/complete-animation)))
-
-        :down
-        (dom/animate! overlay-viewport
-                      [#js {:top (str "-" (:height overlay-size) "px")}
-                       #js {:top (str (:y overlay-position) "px")}]
-                      #js {:duration (:duration animation)
-                           :easing (name (:easing animation))}
-                      #(st/emit! (dv/complete-animation)))))))
+                      [#js {:opacity "0"}
+                       #js {:opacity "1"}]
+                      timing
+                      done)))))
 
 (defn animate-close-overlay
-  [animation overlay-viewport
-   wrapper-size overlay-size overlay-position overlay-id]
-  (when (some? overlay-viewport)
-    (case (:animation-type animation)
+  [animation overlay-viewport overlay-id]
+  (let [done #(st/emit! (dv/complete-animation)
+                        (dv/close-overlay overlay-id))]
+    (if (nil? overlay-viewport)
+      (done)
+      (let [timing #js {:duration (:duration animation)
+                        :easing (name (:easing animation :linear))
+                        ;; Keep it hidden until the overlay is removed
+                        :fill "forwards"}]
+        (case (:animation-type animation)
+          :slide ;; way and offset-effect are ignored
+          (dom/animate! overlay-viewport
+                        [#js {:transform "none"}
+                         #js {:transform (translate
+                                          (slide-in-offset overlay-viewport
+                                                           (opposite-direction (:direction animation))))}]
+                        timing
+                        done)
 
-      :dissolve
-      (dom/animate! overlay-viewport
-                    [#js {:opacity "100"}
-                     #js {:opacity "0"}]
-                    #js {:duration (:duration animation)
-                         :easing (name (:easing animation))}
-                    #(st/emit! (dv/complete-animation)
-                               (dv/close-overlay overlay-id)))
-
-      :slide
-      (case (:direction animation) ;; way and offset-effect are ignored
-
-        :right
-        (dom/animate! overlay-viewport
-                      [#js {:left (str (:x overlay-position) "px")}
-                       #js {:left (str (:width wrapper-size) "px")}]
-                      #js {:duration (:duration animation)
-                           :easing (name (:easing animation))}
-                      #(st/emit! (dv/complete-animation)
-                                 (dv/close-overlay overlay-id)))
-
-        :left
-        (dom/animate! overlay-viewport
-                      [#js {:left (str (:x overlay-position) "px")}
-                       #js {:left (str "-" (:width overlay-size) "px")}]
-                      #js {:duration (:duration animation)
-                           :easing (name (:easing animation))}
-                      #(st/emit! (dv/complete-animation)
-                                 (dv/close-overlay overlay-id)))
-
-        :up
-        (dom/animate! overlay-viewport
-                      [#js {:top (str (:y overlay-position) "px")}
-                       #js {:top (str "-" (:height overlay-size) "px")}]
-                      #js {:duration (:duration animation)
-                           :easing (name (:easing animation))}
-                      #(st/emit! (dv/complete-animation)
-                                 (dv/close-overlay overlay-id)))
-
-        :down
-        (dom/animate! overlay-viewport
-                      [#js {:top (str (:y overlay-position) "px")}
-                       #js {:top (str (:height wrapper-size) "px")}]
-                      #js {:duration (:duration animation)
-                           :easing (name (:easing animation))}
-                      #(st/emit! (dv/complete-animation)
-                                 (dv/close-overlay overlay-id)))))))
-
+          (dom/animate! overlay-viewport
+                        [#js {:opacity "1"}
+                         #js {:opacity "0"}]
+                        timing
+                        done))))))

@@ -32,6 +32,7 @@
    [app.main.ui.viewer.interactions :as interactions]
    [app.main.ui.viewer.login]
    [app.main.ui.viewer.share-link]
+   [app.main.ui.viewer.smart-animate :as smart]
    [app.main.ui.viewer.thumbnails :refer [thumbnails-panel*]]
    [app.util.dom :as dom]
    [app.util.dom.normalize-wheel :as nw]
@@ -137,10 +138,31 @@
          :frame frame
          :page page}])]))
 
+(defn- forward-to-hover-source!
+  "A hover overlay usually covers the element that opened it, so pointer
+  events not handled by the overlay itself go to that element (a hover
+  state then keeps the click interactions of the element)."
+  [overlay event]
+  (when-let [source-id (and (:hover-source? overlay) (:source-id overlay))]
+    (let [container (dom/get-element "viewer-base-viewport")
+          nodes     (dom/query-all container (dm/str "[id=\"shape-" source-id "\"]"))
+          n         (some-> nodes .-length)
+          native    (dom/event->browser-event event)
+          type      (.-type ^js native)]
+      (when (and n (pos? n))
+        (let [node (aget nodes (dec n))]
+          (js/setTimeout
+           #(.dispatchEvent ^js node (js/PointerEvent. type #js {:bubbles true
+                                                                 :cancelable true
+                                                                 :pointerId (.-pointerId ^js native)
+                                                                 :button (.-button ^js native)}))
+           0))))))
+
 (mf/defc viewer-overlay
   [{:keys [overlay page frame zoom wrapper-size interactions-mode]}]
   (let [close-click-outside? (:close-click-outside overlay)
-        background-overlay?  (:background-overlay overlay)
+        background-overlay?  (and (:background-overlay overlay)
+                                  (not (:replaced-by overlay)))
         overlay-frame        (:frame overlay)
         overlay-position     (:position overlay)
         fixed-base?          (:fixed-source? overlay)
@@ -160,7 +182,13 @@
            (when close-click-outside?
              (if-let [animation (:animation overlay)]
                (st/emit! (dv/close-overlay (:id overlay) (ctsi/invert-direction animation)))
-               (st/emit! (dv/close-overlay (:id overlay)))))))]
+               (st/emit! (dv/close-overlay (:id overlay)))))))
+
+        on-pointer-event
+        (mf/use-fn
+         (mf/deps overlay)
+         (fn [event]
+           (forward-to-hover-source! overlay event)))]
 
     [:*
      (when (or close-click-outside? background-overlay?)
@@ -183,6 +211,8 @@
                       :z-index 2}}
         [:div {:class (stl/css :viewer-overlay :viewport-container)
                :id (dm/str "overlay-" (:id overlay-frame))
+               :on-pointer-down on-pointer-event
+               :on-pointer-up on-pointer-event
                :style {:width (:width size)
                        :height (:height size)
                        :position "fixed"}}
@@ -197,6 +227,8 @@
 
        [:div {:class (stl/css :viewer-overlay :viewport-container)
               :id (dm/str "overlay-" (:id overlay-frame))
+              :on-pointer-down on-pointer-event
+              :on-pointer-up on-pointer-event
               :style {:width (:width size)
                       :height (:height size)
                       :left (* (:x overlay-position) zoom)
@@ -246,6 +278,7 @@
           :interactions-mode interactions-mode}]])
 
      [:div {:class (stl/css :viewport-container)
+            :id "viewer-base-viewport"
             :ref current-viewport-ref
             :style {:width (:width size)
                     :height (:height size)
@@ -485,14 +518,26 @@
        (let [nav-animation (d/seek #(= (:kind %) :go-to-frame) (vals current-animations))]
          (when nav-animation
            (let [orig-viewport    (mf/ref-val orig-viewport-ref)
-                 current-viewport (mf/ref-val current-viewport-ref)]
-             (interactions/animate-go-to-frame
-              (:animation nav-animation)
-              current-viewport
-              orig-viewport
-              size
-              orig-size
-              wrapper-size))))))
+                 current-viewport (mf/ref-val current-viewport-ref)
+                 animation        (:animation nav-animation)
+                 animate          #(interactions/animate-go-to-frame
+                                    %
+                                    current-viewport
+                                    orig-viewport
+                                    size
+                                    orig-size
+                                    wrapper-size)]
+             (if (= :smart-animate (:animation-type animation))
+               (when-not (smart/animate! {:from-node orig-viewport
+                                          :to-node current-viewport
+                                          :from-frame-id (:orig-frame-id nav-animation)
+                                          :to-frame-id (:id frame)
+                                          :objects (:objects page)
+                                          :animation animation
+                                          :on-complete #(st/emit! (dv/complete-animation))})
+                 ;; Not rendered as SVG (e.g. the WASM viewer)
+                 (animate (assoc animation :animation-type :dissolve)))
+               (animate animation)))))))
 
     (mf/use-effect
      (mf/deps current-animations)
@@ -501,34 +546,27 @@
        (when current-animations
          (doseq [[overlay-frame-id animation-vals] current-animations]
            (let [overlay-viewport (dom/get-element (str "overlay-" (str (:overlay-id animation-vals))))
-                 overlay          (d/seek #(= (:id (:frame %)) overlay-frame-id)
-                                          overlays)
-                 overlay-size     (calculate-size (:objects page) (:frame overlay) zoom)
-                 overlay-position {:x (* (:x (:position overlay)) zoom)
-                                   :y (* (:y (:position overlay)) zoom)}
-                 orig-frame       (when (:orig-frame-id animation-vals)
-                                    (d/seek #(= (:id %) (:orig-frame-id animation-vals)) frames))
-                 size             (calculate-size (:objects page) frame zoom)
-                 orig-size        (when orig-frame
-                                    (calculate-size (:objects page) orig-frame zoom))
-                 wrapper-size     (calculate-wrapper size orig-size zoom)]
+                 animation        (:animation animation-vals)]
              (case (:kind animation-vals)
                :open-overlay
-               (interactions/animate-open-overlay
-                (:animation animation-vals)
-                overlay-viewport
-                wrapper-size
-                overlay-size
-                overlay-position)
+               (interactions/animate-open-overlay animation overlay-viewport)
+
+               :swap-overlay
+               (let [from-id   (:from-overlay-id animation-vals)
+                     from-node (dom/get-element (str "overlay-" from-id))]
+                 (when-not (and (= :smart-animate (:animation-type animation))
+                                (smart/animate! {:from-node from-node
+                                                 :to-node overlay-viewport
+                                                 :from-frame-id from-id
+                                                 :to-frame-id overlay-frame-id
+                                                 :objects (:objects page)
+                                                 :animation animation
+                                                 :animate-root? true
+                                                 :on-complete #(st/emit! (dv/complete-animation))}))
+                   (interactions/animate-open-overlay animation overlay-viewport)))
 
                :close-overlay
-               (interactions/animate-close-overlay
-                (:animation animation-vals)
-                overlay-viewport
-                wrapper-size
-                overlay-size
-                overlay-position
-                (:id (:frame overlay)))
+               (interactions/animate-close-overlay animation overlay-viewport overlay-frame-id)
 
                nil))))))
 

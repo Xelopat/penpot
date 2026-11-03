@@ -8132,6 +8132,38 @@ msgstr "Toggle overlay"
 msgid "workspace.options.interaction-toggle-overlay-dest"
 msgstr "Toggle overlay: %s"
 
+#: src/app/main/ui/workspace/sidebar/options/menus/interactions.cljs
+msgid "workspace.options.interaction-animation-smart"
+msgstr "Smart animate"
+
+#: src/app/main/ui/workspace/sidebar/options/menus/interactions.cljs
+msgid "workspace.options.interaction-scroll-offset"
+msgstr "Offset"
+
+#: src/app/main/ui/workspace/sidebar/options/menus/interactions.cljs
+msgid "workspace.options.interaction-scroll-to"
+msgstr "Scroll to"
+
+#: src/app/main/ui/workspace/sidebar/options/menus/interactions.cljs
+msgid "workspace.options.interaction-scroll-to-dest"
+msgstr "Scroll to: %s"
+
+#: src/app/main/ui/workspace/sidebar/options/menus/interactions.cljs
+msgid "workspace.options.interaction-scroll-top"
+msgstr "top"
+
+#: src/app/main/ui/workspace/sidebar/options/menus/interactions.cljs
+msgid "workspace.options.interaction-swap-overlay"
+msgstr "Swap overlay"
+
+#: src/app/main/ui/workspace/sidebar/options/menus/interactions.cljs
+msgid "workspace.options.interaction-swap-overlay-dest"
+msgstr "Swap overlay: %s"
+
+#: src/app/main/ui/workspace/sidebar/options/menus/interactions.cljs
+msgid "workspace.options.interaction-viewport"
+msgstr "Viewport"
+
 #: src/app/main/ui/workspace/sidebar/options/menus/interactions.cljs:415
 msgid "workspace.options.interaction-trigger"
 msgstr "Trigger"

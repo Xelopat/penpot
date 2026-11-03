@@ -112,6 +112,10 @@
 
                      :toggle-overlay "M-5 -5 h7 v7 h-7 z M2 -2 h3.5 v7 h-7 v-2.5"
 
+                     :swap-overlay "M-5 -5 h7 v7 h-7 z M2 -2 h3.5 v7 h-7 v-2.5"
+
+                     :scroll-to "M 0 -6.5 L 0 5.5 M -5 1 L 0 6 L 5 1"
+
                      :close-overlay "M -5 -5 L 5 5 M -5 5 L 5 -5"
 
                      :prev-screen (case arrow-dir
@@ -351,8 +355,7 @@
                                         :is-selected true
                                         :action-type (:action-type interaction)
                                         :zoom zoom}]
-                 (when (and (or (= (:action-type interaction) :open-overlay)
-                                (= (:action-type interaction) :toggle-overlay))
+                 (when (and (ctsi/has-overlay-opts interaction)
                             (= (:overlay-pos-type interaction) :manual))
                    (if (and (some? move-overlay-to)
                             (= move-overlay-index index))

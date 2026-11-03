@@ -5810,6 +5810,38 @@ msgstr "Переключить наложение"
 msgid "workspace.options.interaction-toggle-overlay-dest"
 msgstr "Переключить наложение: %s"
 
+#: src/app/main/ui/workspace/sidebar/options/menus/interactions.cljs
+msgid "workspace.options.interaction-animation-smart"
+msgstr "Умная анимация"
+
+#: src/app/main/ui/workspace/sidebar/options/menus/interactions.cljs
+msgid "workspace.options.interaction-scroll-offset"
+msgstr "Отступ"
+
+#: src/app/main/ui/workspace/sidebar/options/menus/interactions.cljs
+msgid "workspace.options.interaction-scroll-to"
+msgstr "Прокрутить к"
+
+#: src/app/main/ui/workspace/sidebar/options/menus/interactions.cljs
+msgid "workspace.options.interaction-scroll-to-dest"
+msgstr "Прокрутить к: %s"
+
+#: src/app/main/ui/workspace/sidebar/options/menus/interactions.cljs
+msgid "workspace.options.interaction-scroll-top"
+msgstr "начало"
+
+#: src/app/main/ui/workspace/sidebar/options/menus/interactions.cljs
+msgid "workspace.options.interaction-swap-overlay"
+msgstr "Заменить наложение"
+
+#: src/app/main/ui/workspace/sidebar/options/menus/interactions.cljs
+msgid "workspace.options.interaction-swap-overlay-dest"
+msgstr "Заменить наложение: %s"
+
+#: src/app/main/ui/workspace/sidebar/options/menus/interactions.cljs
+msgid "workspace.options.interaction-viewport"
+msgstr "Экран"
+
 #: src/app/main/ui/workspace/sidebar/options/menus/interactions.cljs:415
 msgid "workspace.options.interaction-trigger"
 msgstr "Триггер"

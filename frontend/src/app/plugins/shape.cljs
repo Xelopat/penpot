@@ -156,11 +156,12 @@
        :get #(-> % u/proxy->interaction (format/format-action plugin-id file-id page-id))
        :set
        (fn [self value]
-         (let [params (parser/parse-action value)
+         (let [current-interaction (u/proxy->interaction self)
+               params (-> (parser/parse-action value)
+                          (parser/resolve-animation (:event-type current-interaction)))
                index  (locate-index)
                interaction
-               (-> (u/proxy->interaction self)
-                   (d/patch-object params))]
+               (d/patch-object current-interaction params)]
            (cond
              (not (r/check-permission plugin-id "content:write"))
              (u/not-valid plugin-id :action "Plugin doesn't have 'content:write' permission")

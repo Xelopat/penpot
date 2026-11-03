@@ -9,8 +9,11 @@
   (:require
    [app.common.data :as d]
    [app.common.files.helpers :as cfh]
+   [app.common.geom.point :as gpt]
    [app.common.geom.shapes :as gsh]
+   [app.common.geom.shapes.bounds :as gsb]
    [app.common.types.shape.interactions :as ctsi]
+   [app.common.uuid :as uuid]
    [app.main.data.viewer :as dv]
    [app.main.refs :as refs]
    [app.main.router :as rt]
@@ -25,6 +28,7 @@
    [app.main.ui.shapes.shape :refer [shape-container]]
    [app.main.ui.shapes.svg-raw :as svg-raw]
    [app.main.ui.shapes.text :as text]
+   [app.main.ui.viewer.scroll :as vsc]
    [app.util.dom :as dom]
    [app.util.object :as obj]
    [app.util.timers :as tm]
@@ -53,6 +57,169 @@
         objects (assoc objects (:id shape) shape)]
     [shape objects]))
 
+(defn- find-overlay-of
+  "The open overlay that contains the shape `id`, if any."
+  [id objects overlays]
+  (when (and (some? id) (seq overlays))
+    (let [ids (into #{id} (cfh/get-parent-ids objects id))]
+      (d/seek #(contains? ids (:id %)) (rseq (vec overlays))))))
+
+(defn- get-viewport-rect
+  "Visible area of the base frame, in base frame coordinates, as it is laid
+  out before any scroll. Overlays rendered fixed at that place stay in the
+  visible area of the screen while the page scrolls below them."
+  [base-frame]
+  (let [{:keys [width height]} (:selrect base-frame)
+        fallback  {:x 0 :y 0 :width width :height height}
+        section   (dom/get-element "viewer-section")
+        container (dom/get-element "viewer-base-viewport")
+        zoom      (get-in @st/state [:viewer-local :zoom] 1)]
+    (if (or (nil? section) (nil? container))
+      fallback
+      (let [srect (dom/get-bounding-rect section)
+            crect (dom/get-bounding-rect container)
+            ;; Container position with the section scrolled to its origin
+            left  (+ (:left crect) (.-scrollLeft ^js section))
+            top   (+ (:top crect) (.-scrollTop ^js section))
+            x1    (max 0 (/ (- (:left srect) left) zoom))
+            y1    (max 0 (/ (- (:top srect) top) zoom))
+            x2    (min width (/ (- (+ (:left srect) (.-clientWidth ^js section)) left) zoom))
+            y2    (min height (/ (- (+ (:top srect) (.-clientHeight ^js section)) top) zoom))]
+        (if (or (<= x2 x1) (<= y2 y1))
+          fallback
+          {:x x1 :y y1 :width (- x2 x1) :height (- y2 y1)})))))
+
+(defn- calc-overlay
+  "Where and how to show the overlay of an `open-overlay`,
+  `toggle-overlay` or `swap-overlay` interaction."
+  [interaction shape base-frame frame-offset objects overlays]
+  (let [manual?                (= :manual (:overlay-pos-type interaction))
+        viewport?              (ctsi/relative-to-viewport? interaction)
+        source-overlay         (find-overlay-of (:id shape) objects overlays)
+        [shape objects]        (ignore-frame-shape shape objects manual?)
+        dest-frame-id          (:destination interaction)
+        dest-frame             (get objects dest-frame-id)
+        relative-to-id         (if manual?
+                                 (if (= (:type shape) :frame) ;; manual interactions are always from "self"
+                                   (:frame-id shape)
+                                   (:id shape))
+                                 (:position-relative-to interaction))
+        relative-to-shape      (or (get objects relative-to-id) base-frame)
+        overlays-ids           (set (map :id overlays))
+        relative-to-base-frame (find-relative-to-base-frame relative-to-shape objects overlays-ids base-frame)
+
+        [position snap-to]
+        (if (and viewport? (some? dest-frame))
+          (ctsi/calc-overlay-viewport-position interaction
+                                               (gsb/get-object-bounds objects dest-frame)
+                                               (get-viewport-rect base-frame))
+          (ctsi/calc-overlay-position interaction
+                                      shape
+                                      objects
+                                      relative-to-shape
+                                      relative-to-base-frame
+                                      dest-frame
+                                      frame-offset))
+
+        ;; An overlay placed against something inside an overlay that is
+        ;; fixed on screen must stay fixed with it
+        inside-fixed-overlay?
+        (and (:fixed-source? source-overlay)
+             (some? (find-overlay-of relative-to-id objects [source-overlay])))]
+
+    {:dest-frame-id       dest-frame-id
+     :position            position
+     :snap-to             snap-to
+     :fixed?              (boolean (or viewport?
+                                       (cfh/fixed? objects relative-to-id)
+                                       inside-fixed-overlay?))
+     :source-overlay      source-overlay
+     :close-click-outside (:close-click-outside interaction)
+     :background-overlay  (:background-overlay interaction)
+     :animation           (:animation interaction)
+     :opts                {:anchor (cond viewport? :viewport
+                                         manual?   (:id shape)
+                                         :else     relative-to-id)
+                           :pos-type (:overlay-pos-type interaction)
+                           :source-id (:id shape)
+                           :hover-source? (contains? #{:mouse-over :mouse-enter}
+                                                     (:event-type interaction))}}))
+
+(defn- swap-overlay-params
+  "Overlays replaced by a `swap-overlay` interaction and where the new one
+  goes. Inside an overlay, the overlay holding the trigger is replaced;
+  outside, the overlays opened against the same reference (tabs over the
+  same anchor). An overlay with automatic position takes the place of the
+  one it replaces."
+  [overlay interaction base-frame overlays objects]
+  (let [{:keys [source-overlay opts]} overlay
+        auto?    (and (nil? (:position-relative-to interaction))
+                      (not (ctsi/relative-to-viewport? interaction))
+                      (not= :manual (:overlay-pos-type interaction)))
+        in-place (when (and auto? (some? source-overlay)) source-overlay)
+        replace  (if (some? source-overlay)
+                   [(:id source-overlay)]
+                   (->> overlays
+                        (filter #(= (:anchor %) (:anchor opts)))
+                        (map :id)))]
+    (if (nil? in-place)
+      (assoc overlay :replace-ids replace)
+      (let [dest-frame (get objects (:destination interaction))
+            [position snap-to]
+            (if (and (= :viewport (:anchor in-place)) (some? dest-frame))
+              (ctsi/calc-overlay-viewport-position
+               {:overlay-pos-type (:pos-type in-place)}
+               (gsb/get-object-bounds objects dest-frame)
+               (get-viewport-rect base-frame))
+              [(:position in-place) (:snap-to in-place)])]
+        (assoc overlay
+               :replace-ids replace
+               :position position
+               :snap-to snap-to
+               :fixed? (:fixed-source? in-place)
+               :opts (assoc opts
+                            :anchor (:anchor in-place)
+                            :pos-type (:pos-type in-place)))))))
+
+(defn- scroll-to!
+  "Scroll the viewer so the destination layer is at the top of the screen.
+  When the layer belongs to another screen, navigate there first."
+  [interaction]
+  (let [state         @st/state
+        qparams       (get-in state [:route :query-params])
+        page-id       (some-> (:page-id qparams) uuid/parse)
+        index         (some-> (rt/get-query-param qparams :index) parse-long)
+        page          (get-in state [:viewer :pages page-id])
+        objects       (:objects page)
+        dest          (get objects (:destination interaction))
+        frame         (some->> (:id dest) (cfh/get-root-frame objects))
+        current       (get (:frames page) index)
+        zoom          (get-in state [:viewer-local :zoom] 1)
+        offset        (or (:scroll-offset interaction) (gpt/point 0 0))
+        animation     (:animation interaction)]
+    (when (and (some? dest) (some? frame))
+      (let [bounds (gsb/get-object-bounds objects frame)
+            rect   (:selrect dest)
+            dx     (* (+ (- (:x rect) (:x bounds)) (:x offset)) zoom)
+            dy     (* (+ (- (:y rect) (:y bounds)) (:y offset)) zoom)]
+        (if (= (:id frame) (:id current))
+          (let [section   (dom/get-element "viewer-section")
+                container (dom/get-element "viewer-base-viewport")]
+            (when (and section container)
+              (let [srect (dom/get-bounding-rect section)
+                    crect (dom/get-bounding-rect container)]
+                (vsc/animate-scroll! section
+                                     (+ (.-scrollLeft ^js section) (- (:left crect) (:left srect)) dx)
+                                     (+ (.-scrollTop ^js section) (- (:top crect) (:top srect)) dy)
+                                     animation))))
+          (when (some #(= (:id %) (:id frame)) (:frames page))
+            (st/emit! (dv/set-nav-scroll (max 0 dy))
+                      (dv/go-to-frame (:id frame)
+                                      (when animation
+                                        {:animation-type :dissolve
+                                         :duration (:duration animation)
+                                         :easing (:easing animation)})))))))))
+
 (defn- activate-interaction
   [interaction shape base-frame frame-offset objects overlays]
   (case (:action-type interaction)
@@ -66,69 +233,48 @@
                   (dv/go-to-frame frame-id (:animation interaction)))))
 
     :open-overlay
-    (let [manual?                    (= :manual (:overlay-pos-type interaction))
-          [shape objects]            (ignore-frame-shape shape objects manual?)
-          dest-frame-id              (:destination interaction)
-          dest-frame                 (get objects dest-frame-id)
-          relative-to-id             (if manual?
-                                       (if (= (:type shape) :frame) ;; manual interactions are always from "self"
-                                         (:frame-id shape)
-                                         (:id shape))
-                                       (:position-relative-to interaction))
-          relative-to-shape          (or (get objects relative-to-id) base-frame)
-          close-click-outside        (:close-click-outside interaction)
-          background-overlay         (:background-overlay interaction)
-          overlays-ids               (set (map :id overlays))
-          relative-to-base-frame     (find-relative-to-base-frame relative-to-shape objects overlays-ids base-frame)
-          fixed-base?                (cfh/fixed? objects relative-to-id)
-          [position snap-to]         (ctsi/calc-overlay-position interaction
-                                                                 shape
-                                                                 objects
-                                                                 relative-to-shape
-                                                                 relative-to-base-frame
-                                                                 dest-frame
-                                                                 frame-offset)]
+    (let [{:keys [dest-frame-id position snap-to close-click-outside
+                  background-overlay animation fixed? opts]}
+          (calc-overlay interaction shape base-frame frame-offset objects overlays)]
       (when dest-frame-id
         (st/emit! (dv/open-overlay dest-frame-id
                                    position
                                    snap-to
                                    close-click-outside
                                    background-overlay
-                                   (:animation interaction)
-                                   fixed-base?))))
+                                   animation
+                                   fixed?
+                                   opts))))
 
     :toggle-overlay
-    (let [manual?                    (= :manual (:overlay-pos-type interaction))
-          [shape objects]            (ignore-frame-shape shape objects manual?)
-          dest-frame-id              (:destination interaction)
-          dest-frame                 (get objects dest-frame-id)
-          relative-to-id             (if (= :manual (:overlay-pos-type interaction))
-                                       (if (= (:type shape) :frame) ;; manual interactions are always from "self"
-                                         (:frame-id shape)
-                                         (:id shape))
-                                       (:position-relative-to interaction))
-          relative-to-shape          (or (get objects relative-to-id) base-frame)
-          overlays-ids               (set (map :id overlays))
-          relative-to-base-frame     (find-relative-to-base-frame relative-to-shape objects overlays-ids base-frame)
-          fixed-base?                (cfh/fixed? objects (:id base-frame))
-          [position snap-to]         (ctsi/calc-overlay-position interaction
-                                                                 shape
-                                                                 objects
-                                                                 relative-to-shape
-                                                                 relative-to-base-frame
-                                                                 dest-frame
-                                                                 frame-offset)
-
-          close-click-outside        (:close-click-outside interaction)
-          background-overlay         (:background-overlay interaction)]
+    (let [{:keys [dest-frame-id position snap-to close-click-outside
+                  background-overlay animation fixed? opts]}
+          (calc-overlay interaction shape base-frame frame-offset objects overlays)]
       (when dest-frame-id
         (st/emit! (dv/toggle-overlay dest-frame-id
                                      position
                                      snap-to
                                      close-click-outside
                                      background-overlay
-                                     (:animation interaction)
-                                     fixed-base?))))
+                                     animation
+                                     fixed?
+                                     opts))))
+
+    :swap-overlay
+    (let [{:keys [dest-frame-id position snap-to close-click-outside
+                  background-overlay animation fixed? opts replace-ids]}
+          (-> (calc-overlay interaction shape base-frame frame-offset objects overlays)
+              (swap-overlay-params interaction base-frame overlays objects))]
+      (when dest-frame-id
+        (st/emit! (dv/swap-overlay replace-ids
+                                   dest-frame-id
+                                   position
+                                   snap-to
+                                   close-click-outside
+                                   background-overlay
+                                   animation
+                                   fixed?
+                                   opts))))
 
     :close-overlay
     (let [dest-frame-id (or (:destination interaction)
@@ -137,6 +283,9 @@
                               (:id shape)
                               (:frame-id shape)))]
       (st/emit! (dv/close-overlay dest-frame-id (:animation interaction))))
+
+    :scroll-to
+    (scroll-to! interaction)
 
     :prev-screen
     (st/emit! (rt/nav-back-local))
@@ -155,73 +304,39 @@
                        (if (= (:type shape) :frame)
                          (:id shape)
                          (:frame-id shape)))]
-      (st/emit! (dv/close-overlay frame-id)))
+      (st/emit! (dv/close-overlay frame-id
+                                  (some-> (:animation interaction) ctsi/invert-direction))))
 
     :toggle-overlay
-    (let [manual?                    (= :manual (:overlay-pos-type interaction))
-          [shape objects]            (ignore-frame-shape shape objects manual?)
-          dest-frame-id              (:destination interaction)
-          dest-frame                 (get objects dest-frame-id)
-          relative-to-id             (if (= :manual (:overlay-pos-type interaction))
-                                       (if (= (:type shape) :frame) ;; manual interactions are always from "self"
-                                         (:frame-id shape)
-                                         (:id shape))
-                                       (:position-relative-to interaction))
-          relative-to-shape          (or (get objects relative-to-id) base-frame)
-          overlays-ids               (set (map :id overlays))
-          relative-to-base-frame     (find-relative-to-base-frame relative-to-shape objects overlays-ids base-frame)
-          fixed-base?                (cfh/fixed? objects (:id base-frame))
-          [position snap-to]         (ctsi/calc-overlay-position interaction
-                                                                 shape
-                                                                 objects
-                                                                 relative-to-shape
-                                                                 relative-to-base-frame
-                                                                 dest-frame
-                                                                 frame-offset)
-
-          close-click-outside        (:close-click-outside interaction)
-          background-overlay         (:background-overlay interaction)]
+    (let [{:keys [dest-frame-id position snap-to close-click-outside
+                  background-overlay animation fixed? opts]}
+          (calc-overlay interaction shape base-frame frame-offset objects overlays)]
       (when dest-frame-id
         (st/emit! (dv/toggle-overlay dest-frame-id
                                      position
                                      snap-to
                                      close-click-outside
                                      background-overlay
-                                     (:animation interaction)
-                                     fixed-base?))))
-
+                                     animation
+                                     fixed?
+                                     opts))))
 
     :close-overlay
-    (let [manual?                    (= :manual (:overlay-pos-type interaction))
-          [shape objects]            (ignore-frame-shape shape objects manual?)
-          dest-frame-id              (:destination interaction)
-          dest-frame                 (get objects dest-frame-id)
-          relative-to-id             (if (= :manual (:overlay-pos-type interaction))
-                                       (if (= (:type shape) :frame) ;; manual interactions are always from "self"
-                                         (:frame-id shape)
-                                         (:id shape))
-                                       (:position-relative-to interaction))
-          relative-to-shape          (or (get objects relative-to-id) base-frame)
-          close-click-outside        (:close-click-outside interaction)
-          background-overlay         (:background-overlay interaction)
-          overlays-ids               (set (map :id overlays))
-          relative-to-base-frame     (find-relative-to-base-frame relative-to-shape objects overlays-ids base-frame)
-          fixed-base?                (cfh/fixed? objects (:id base-frame))
-          [position snap-to]         (ctsi/calc-overlay-position interaction
-                                                                 shape
-                                                                 objects
-                                                                 relative-to-shape
-                                                                 relative-to-base-frame
-                                                                 dest-frame
-                                                                 frame-offset)]
+    (let [{:keys [dest-frame-id position snap-to close-click-outside
+                  background-overlay animation fixed? opts]}
+          (calc-overlay (assoc interaction
+                               :action-type :open-overlay
+                               :overlay-pos-type (or (:overlay-pos-type interaction) :center))
+                        shape base-frame frame-offset objects overlays)]
       (when dest-frame-id
         (st/emit! (dv/open-overlay dest-frame-id
                                    position
                                    snap-to
                                    close-click-outside
                                    background-overlay
-                                   (:animation interaction)
-                                   fixed-base?))))
+                                   animation
+                                   fixed?
+                                   opts))))
     nil))
 
 (defn- on-pointer-down
@@ -253,18 +368,42 @@
       (doseq [interaction interactions]
         (activate-interaction interaction shape base-frame frame-offset objects overlays)))))
 
+(defn- hover-overlay-node
+  "Rendered overlay opened by a hover interaction, when the pointer just
+  moved into it."
+  [event interaction]
+  (when (contains? #{:open-overlay :toggle-overlay} (:action-type interaction))
+    (let [related (.-relatedTarget ^js (dom/event->browser-event event))
+          node    (some->> (:destination interaction) (str "overlay-") dom/get-element)]
+      (when (and (some? related) (some? node) (.contains ^js node related))
+        node))))
+
 (defn- on-pointer-leave
   [event shape base-frame frame-offset objects overlays]
   (let [interactions     (->> (:interactions shape)
                               (filter #(= (:event-type %) :mouse-leave)))
         interactions-inv (->> (:interactions shape)
-                              (filter #(= (:event-type %) :mouse-over)))]
+                              (filter #(= (:event-type %) :mouse-over)))
+        trigger-node     (dom/get-current-target event)]
     (when (or (seq interactions) (seq interactions-inv))
       (dom/stop-propagation event)
       (doseq [interaction interactions]
         (activate-interaction interaction shape base-frame frame-offset objects overlays))
       (doseq [interaction interactions-inv]
-        (deactivate-interaction interaction shape base-frame frame-offset objects overlays)))))
+        (let [deactivate #(deactivate-interaction interaction shape base-frame frame-offset objects overlays)]
+          (if-let [overlay-node (hover-overlay-node event interaction)]
+            ;; The pointer moved into the overlay this hover opened (for
+            ;; example a hover state that covers the trigger): keep it open
+            ;; until the pointer leaves both the overlay and the trigger.
+            (.addEventListener ^js overlay-node "pointerleave"
+                               (fn [^js leave-event]
+                                 (let [related (.-relatedTarget leave-event)]
+                                   (when-not (and (some? related)
+                                                  (some? trigger-node)
+                                                  (.contains ^js trigger-node related))
+                                     (deactivate))))
+                               #js {:once true})
+            (deactivate)))))))
 
 (defn- on-load
   [shape base-frame frame-offset objects overlays]

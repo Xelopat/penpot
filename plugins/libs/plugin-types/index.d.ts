@@ -149,7 +149,9 @@ export type Action =
   | NavigateTo
   | OpenOverlay
   | ToggleOverlay
+  | SwapOverlay
   | CloseOverlay
+  | ScrollTo
   | PreviousScreen
   | OpenUrl;
 
@@ -183,7 +185,7 @@ export interface ActiveUser extends User {
 /**
  * Type of all the animations that can be added to an interaction.
  */
-export type Animation = Dissolve | Slide | Push;
+export type Animation = Dissolve | Slide | Push | SmartAnimate;
 
 /**
  * Represents blur properties in Penpot.
@@ -485,9 +487,11 @@ export interface CloseOverlay {
   readonly destination?: Board;
 
   /**
-   * Animation displayed with this interaction. Omit it to close with no transition.
+   * Animation displayed with this interaction. When omitted, a dissolve of
+   * 250 ms (150 ms for hover triggers) with `ease-out` easing is used;
+   * pass `null` for an instant transition.
    */
-  readonly animation?: Animation;
+  readonly animation?: Animation | null;
 }
 
 /**
@@ -3067,9 +3071,12 @@ export interface NavigateTo {
   readonly preserveScrollPosition?: boolean;
 
   /**
-   * Animation displayed with this interaction.
+   * Animation displayed with this interaction. `smart-animate`
+   * interpolates the layers with the same name in both boards.
+   * When omitted, a dissolve of 250 ms (150 ms for hover triggers) with
+   * `ease-out` easing is used; pass `null` for an instant transition.
    */
-  readonly animation?: Animation;
+  readonly animation?: Animation | null;
 }
 
 /**
@@ -3106,9 +3113,17 @@ export interface OverlayAction {
   readonly destination: Board;
 
   /**
-   * Base shape to which the overlay will be positioned taking constraints into account.
+   * Reference used to place the overlay:
+   * - `'viewport'`: the visible area of the screen. The overlay stays in
+   *   place while the page below scrolls (modals, drawers, toasts).
+   * - a shape: the overlay is positioned against that shape.
+   * - `null`: the whole base board (on a long page `center` is the middle
+   *   of the page, not of the screen).
+   *
+   * When omitted, `'viewport'` is used unless `position` is `'manual'`,
+   * which is always measured from the trigger.
    */
-  readonly relativeTo?: Shape;
+  readonly relativeTo?: Shape | 'viewport' | null;
 
   /**
    * Positioning of the overlay.
@@ -3139,9 +3154,11 @@ export interface OverlayAction {
   readonly addBackgroundOverlay?: boolean;
 
   /**
-   * Animation displayed with this interaction.
+   * Animation displayed with this interaction. When omitted, a dissolve of
+   * 250 ms (150 ms for hover triggers) with `ease-out` easing is used;
+   * pass `null` for an instant transition.
    */
-  readonly animation?: Animation;
+  readonly animation?: Animation | null;
 }
 
 /**
@@ -3606,6 +3623,36 @@ export interface RulerGuide {
  * The possible orientations for a ruler guide: 'horizontal' or 'vertical'.
  */
 export type RulerGuideOrientation = 'horizontal' | 'vertical';
+
+/**
+ * Scrolls the screen so that the destination layer is at the top of the
+ * visible area, like an anchor link. When the layer belongs to another
+ * board, the viewer navigates to that board and scrolls there.
+ */
+export interface ScrollTo {
+  /**
+   * The action type
+   */
+  readonly type: 'scroll-to';
+
+  /**
+   * Layer to scroll to. Its board scrolls back to the top.
+   */
+  readonly destination: Shape;
+
+  /**
+   * Offset applied to the final scroll position, for example
+   * `{ x: 0, y: -80 }` to stop 80px above the layer so a sticky header
+   * does not cover it.
+   */
+  readonly scrollOffset?: Point;
+
+  /**
+   * Smooth scroll. When omitted, a 400 ms `ease-in-out` smart animate is
+   * used; pass `null` to jump instantly. Only `smart-animate` is allowed.
+   */
+  readonly animation?: SmartAnimate | null;
+}
 
 /**
  * Represents shadow properties in Penpot.
@@ -4159,6 +4206,31 @@ export interface Slide {
 }
 
 /**
+ * Smart animate: layers with the same name path in both states (screens
+ * of a `navigate-to` or overlays of a `swap-overlay`) move and resize from
+ * their old geometry to the new one; layers that also look different
+ * cross-fade, and layers only present in one state fade in or out.
+ * For `scroll-to` it is the smooth scroll itself.
+ */
+export interface SmartAnimate {
+  /**
+   * Type of the animation.
+   */
+  readonly type: 'smart-animate';
+
+  /**
+   * Duration of the animation effect. Defaults to 300.
+   */
+  readonly duration: number;
+
+  /**
+   * Function that the animation will follow for the interpolation.
+   * Defaults to `ease-out`.
+   */
+  readonly easing?: 'linear' | 'ease' | 'ease-in' | 'ease-out' | 'ease-in-out';
+}
+
+/**
  * Represents stroke properties in Penpot. You can add a stroke to any shape except for groups.
  * This interface includes properties for defining the color, style, width, alignment, and caps of a stroke.
  */
@@ -4222,6 +4294,20 @@ export type StrokeCap =
   | 'square-marker'
   | 'circle-marker'
   | 'diamond-marker';
+
+/**
+ * Replaces an overlay instead of stacking a new one on top (tabs,
+ * accordions, wizard steps). Inside an overlay it replaces the overlay
+ * holding the trigger; outside, the overlays opened against the same
+ * `relativeTo`. The replaced overlay stays visible until the new one has
+ * appeared, so the screen below never shows through.
+ */
+export interface SwapOverlay extends OverlayAction {
+  /**
+   * The action type
+   */
+  readonly type: 'swap-overlay';
+}
 
 /**
  * Represents an SVG raw shape in Penpot.
@@ -4499,11 +4585,13 @@ export type TrackType = 'flex' | 'fixed' | 'percent' | 'auto';
 /**
  * Types of triggers defined:
  * - `click` triggers when the user uses the mouse to click on a shape
+ * - `mouse-over` runs the action while the mouse is over the shape and reverts it when the mouse
+ *   leaves both the shape and the overlay it opened (hover states and tooltips).
  * - `mouse-enter` triggers when the user moves the mouse inside the shape (even if no mouse button is pressed)
  * - `mouse-leave` triggers when the user moves the mouse outside the shape.
  * - `after-delay` triggers after the `delay` time has passed even if no interaction from the user happens.
  */
-export type Trigger = 'click' | 'mouse-enter' | 'mouse-leave' | 'after-delay';
+export type Trigger = 'click' | 'mouse-over' | 'mouse-enter' | 'mouse-leave' | 'after-delay';
 
 /**
  * Represents the base properties and methods of a Design Token in Penpot, shared by

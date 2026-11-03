@@ -10,6 +10,7 @@
    [app.common.geom.point :as gpt]
    [app.common.json :as json]
    [app.common.types.path :as path]
+   [app.common.types.shape.interactions :as ctsi]
    [app.common.uuid :as uuid]
    [app.util.object :as obj]
    [cuerdas.core :as str]))
@@ -389,7 +390,13 @@
 ;;   easing?: 'linear' | 'ease' | 'ease-in' | 'ease-out' | 'ease-in-out';
 ;; }
 ;;
-;; export type Animation = Dissolve | Slide | Push;
+;; export interface SmartAnimate {
+;;   type: 'smart-animate';
+;;   duration: number;
+;;   easing?: 'linear' | 'ease' | 'ease-in' | 'ease-out' | 'ease-in-out';
+;; }
+;;
+;; export type Animation = Dissolve | Slide | Push | SmartAnimate;
 
 (defn parse-animation
   [^js animation]
@@ -416,13 +423,65 @@
           :duration (obj/get animation "duration")
           :easing (-> (obj/get animation "easing" "linear") parse-keyword)}
 
+         :smart-animate
+         {:animation-type animation-type
+          :duration (obj/get animation "duration" 300)
+          :easing (-> (obj/get animation "easing" "ease-out") parse-keyword)}
+
          nil)))))
+
+(defn- parse-animation-option
+  "An omitted animation gets the default one for the action (resolved by
+  `resolve-animation`, which knows the trigger); `null` means no
+  animation."
+  [^js action]
+  (let [animation (unchecked-get action "animation")]
+    (cond
+      (undefined? animation) ::default-animation
+      (nil? animation)       ::no-animation
+      :else                  (parse-animation animation))))
+
+(defn resolve-animation
+  "Replace the animation markers left by `parse-action` once the trigger
+  of the interaction is known. A nil animation removes the current one
+  when the result is patched over an interaction."
+  [params event-type]
+  (case (:animation params)
+    ::default-animation
+    (assoc params :animation (ctsi/default-animation (:action-type params) event-type))
+
+    ::no-animation
+    (assoc params :animation nil)
+
+    params))
+
+(defn- parse-overlay-reference
+  "`relativeTo` accepts a shape, the string \"viewport\" (the visible area
+  of the screen) or null (the whole base board). When omitted, overlays
+  that are not manually positioned are placed in the viewport."
+  [^js action]
+  (let [relative-to (unchecked-get action "relativeTo")
+        manual?     (= "manual" (obj/get action "position"))]
+    (cond
+      (= "viewport" relative-to)
+      {:relative-to-viewport true}
+
+      (and (undefined? relative-to) (not manual?))
+      {:relative-to-viewport true}
+
+      (some? relative-to)
+      {:position-relative-to (obj/get relative-to "$id")}
+
+      :else
+      {})))
 
 ;;export type Action =
 ;;  | NavigateTo
 ;;  | OpenOverlay
 ;;  | ToggleOverlay
+;;  | SwapOverlay
 ;;  | CloseOverlay
+;;  | ScrollTo
 ;;  | PreviousScreen
 ;;  | OpenUrl;
 ;;
@@ -433,9 +492,16 @@
 ;;  animation: Animation;
 ;;}
 ;;
+;;export interface ScrollTo {
+;;  type: 'scroll-to';
+;;  destination: Shape;
+;;  scrollOffset?: Point;
+;;  animation?: SmartAnimate | null;
+;;}
+;;
 ;;export interface OverlayAction {
 ;;  destination: Board;
-;;  relativeTo?: Shape;
+;;  relativeTo?: Shape | 'viewport' | null;
 ;;  position?:
 ;;    | 'manual'
 ;;    | 'center'
@@ -457,6 +523,10 @@
 ;;
 ;;export interface ToggleOverlay extends OverlayAction {
 ;;  type: 'toggle-overlay';
+;;}
+;;
+;;export interface SwapOverlay extends OverlayAction {
+;;  type: 'swap-overlay';
 ;;}
 ;;
 ;;export interface CloseOverlay {
@@ -483,23 +553,31 @@
          {:action-type :navigate
           :destination (-> (obj/get action "destination") (obj/get "$id"))
           :preserve-scroll (obj/get action "preserveScrollPosition")
-          :animation (-> (obj/get action "animation") parse-animation)}
+          :animation (parse-animation-option action)}
 
          (:open-overlay
-          :toggle-overlay)
-         {:action-type action-type
-          :destination (-> (obj/get action "destination") (obj/get "$id"))
-          :position-relative-to (-> (obj/get action "relativeTo") (obj/get "$id"))
-          :overlay-pos-type (or (-> (obj/get action "position") parse-keyword) :center)
-          :overlay-position (-> (obj/get action "manualPositionLocation") parse-point)
-          :close-click-outside (obj/get action "closeWhenClickOutside")
-          :background-overlay (obj/get action "addBackgroundOverlay")
-          :animation (-> (obj/get action "animation") parse-animation)}
+          :toggle-overlay
+          :swap-overlay)
+         (merge
+          {:action-type action-type
+           :destination (-> (obj/get action "destination") (obj/get "$id"))
+           :overlay-pos-type (or (-> (obj/get action "position") parse-keyword) :center)
+           :overlay-position (-> (obj/get action "manualPositionLocation") parse-point)
+           :close-click-outside (obj/get action "closeWhenClickOutside")
+           :background-overlay (obj/get action "addBackgroundOverlay")
+           :animation (parse-animation-option action)}
+          (parse-overlay-reference action))
 
          :close-overlay
          {:action-type action-type
           :destination (-> (obj/get action "destination") (obj/get "$id"))
-          :animation (-> (obj/get action "animation") parse-animation)}
+          :animation (parse-animation-option action)}
+
+         :scroll-to
+         {:action-type action-type
+          :destination (-> (obj/get action "destination") (obj/get "$id"))
+          :scroll-offset (-> (obj/get action "scrollOffset") parse-point)
+          :animation (parse-animation-option action)}
 
          :previous-screen
          {:action-type :prev-screen}
@@ -514,7 +592,8 @@
   [trigger ^js action delay]
   (when (and (string? trigger) (some? action))
     (let [trigger (parse-keyword trigger)
-          action  (parse-action action)]
+          action  (-> (parse-action action)
+                      (resolve-animation trigger))]
       (d/without-nils
        (d/patch-object {:event-type trigger :delay delay}  action)))))
 

@@ -8,6 +8,7 @@
   (:require
    [app.common.data :as d]
    [app.common.data.macros :as dm]
+   [app.common.types.shape.interactions :as ctsi]
    [app.plugins.image-data :refer [create-image-data]]
    [app.util.object :as obj]))
 
@@ -463,7 +464,21 @@
             :direction (format-key (:direction animation))
             :duration (:duration animation)
             :easing (format-key (:easing animation))}
+
+       :smart-animate
+       #js {:type "smart-animate"
+            :duration (:duration animation)
+            :easing (format-key (:easing animation))}
        nil))))
+
+(defn- format-overlay-reference
+  [interaction plugin file-id page-id]
+  (cond
+    (:relative-to-viewport interaction)
+    "viewport"
+
+    (:position-relative-to interaction)
+    (shape-proxy plugin file-id page-id (:position-relative-to interaction))))
 
 ;;export type Action =
 ;;  | NavigateTo
@@ -520,7 +535,7 @@
 ;;  type: 'open-url';
 ;;  url: string;
 ;;}
-(defn format-action
+(defn- format-action*
   [interaction plugin file-id page-id]
   (when interaction
     (obj/without-empty
@@ -534,7 +549,7 @@
        :open-overlay
        #js {:type "open-overlay"
             :destination (when (:destination interaction) (shape-proxy plugin file-id page-id (:destination interaction)))
-            :relativeTo (when (:position-relative-to interaction) (shape-proxy plugin file-id page-id (:position-relative-to interaction)))
+            :relativeTo (format-overlay-reference interaction plugin file-id page-id)
             :position (format-key (:overlay-pos-type interaction))
             :manualPositionLocation (format-point (:overlay-position interaction))
             :closeWhenClickOutside (:close-click-outside interaction)
@@ -544,7 +559,17 @@
        :toggle-overlay
        #js {:type "toggle-overlay"
             :destination (when (:destination interaction) (shape-proxy plugin file-id page-id (:destination interaction)))
-            :relativeTo (when (:position-relative-to interaction) (shape-proxy plugin file-id page-id (:position-relative-to interaction)))
+            :relativeTo (format-overlay-reference interaction plugin file-id page-id)
+            :position (format-key (:overlay-pos-type interaction))
+            :manualPositionLocation (format-point (:overlay-position interaction))
+            :closeWhenClickOutside (:close-click-outside interaction)
+            :addBackgroundOverlay (:background-overlay interaction)
+            :animation (format-animation (:animation interaction))}
+
+       :swap-overlay
+       #js {:type "swap-overlay"
+            :destination (when (:destination interaction) (shape-proxy plugin file-id page-id (:destination interaction)))
+            :relativeTo (format-overlay-reference interaction plugin file-id page-id)
             :position (format-key (:overlay-pos-type interaction))
             :manualPositionLocation (format-point (:overlay-position interaction))
             :closeWhenClickOutside (:close-click-outside interaction)
@@ -556,6 +581,12 @@
             :destination (when (:destination interaction) (shape-proxy plugin file-id page-id (:destination interaction)))
             :animation (format-animation (:animation interaction))}
 
+       :scroll-to
+       #js {:type "scroll-to"
+            :destination (when (:destination interaction) (shape-proxy plugin file-id page-id (:destination interaction)))
+            :scrollOffset (format-point (:scroll-offset interaction))
+            :animation (format-animation (:animation interaction))}
+
        :prev-screen
        #js {:type "previous-screen"}
 
@@ -564,6 +595,16 @@
             :url (:url interaction)}
 
        nil))))
+
+(defn format-action
+  [interaction plugin file-id page-id]
+  (when interaction
+    (cond-> (format-action* interaction plugin file-id page-id)
+      ;; An explicit null tells readers, and a write back through the
+      ;; parser, that the transition has no animation
+      (and (ctsi/has-animation? interaction)
+           (nil? (:animation interaction)))
+      (obj/set! "animation" nil))))
 
 (defn axis->orientation
   [axis]
