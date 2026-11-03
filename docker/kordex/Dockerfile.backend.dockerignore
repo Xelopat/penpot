@@ -1,0 +1,12 @@
+**/node_modules
+**/target
+**/.shadow-cljs
+**/.cpcache
+.git
+frontend
+plugins
+mcp
+render-wasm
+exporter
+library
+docs

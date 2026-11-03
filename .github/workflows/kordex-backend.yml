@@ -1,0 +1,49 @@
+name: Kordex backend
+
+on:
+  push:
+    branches: ['codex/mcp-overlay-relative-to']
+    paths:
+      - 'backend/**'
+      - 'common/**'
+      - 'docker/kordex/Dockerfile.backend*'
+      - 'docker/kordex/build-backend.sh'
+      - '.github/workflows/kordex-backend.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: kordex-backend-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  image:
+    if: github.repository == 'Xelopat/penpot'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069
+      - name: Build, test and publish the backend
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          echo "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          version="2.18.5-kordex.4-${GITHUB_SHA:0:12}"
+          docker buildx build \
+            --file docker/kordex/Dockerfile.backend \
+            --platform linux/amd64,linux/arm64 \
+            --build-arg "KORDEX_VERSION=$version" \
+            --build-arg "KORDEX_REVISION=$GITHUB_SHA" \
+            --tag "ghcr.io/xelopat/penpot-backend:$version" \
+            --tag ghcr.io/xelopat/penpot-backend:2.18.5-kordex.4 \
+            --cache-from type=gha,scope=kordex-backend \
+            --cache-to type=gha,scope=kordex-backend,mode=max \
+            --push .
+          echo "Image: ghcr.io/xelopat/penpot-backend:$version" >> "$GITHUB_STEP_SUMMARY"

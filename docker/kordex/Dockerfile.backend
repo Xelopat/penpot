@@ -1,0 +1,18 @@
+# syntax=docker/dockerfile:1
+# The official backend with only penpot.jar rebuilt from this branch, so the
+# file schema (prototype interactions) matches the patched frontend.
+FROM penpotapp/backend:2.18.5 AS official
+
+FROM --platform=$BUILDPLATFORM penpotapp/devenv:latest AS build
+WORKDIR /workspace
+COPY . .
+COPY --from=official /opt/penpot/backend/penpot.jar /workspace/official-penpot.jar
+ARG KORDEX_REVISION=000000000000
+ENV JAVA_OPTS="-Xmx4g"
+RUN bash docker/kordex/build-backend.sh "$KORDEX_REVISION"
+
+FROM official
+COPY --from=build --chown=penpot:penpot /workspace/backend/target/penpot.jar /opt/penpot/backend/penpot.jar
+ARG KORDEX_VERSION=2.18.5-kordex.4
+LABEL org.opencontainers.image.source="https://github.com/Xelopat/penpot" \
+      org.opencontainers.image.version=$KORDEX_VERSION

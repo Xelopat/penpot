@@ -1,3 +1,7 @@
 services:
   penpot-frontend:
     image: ${KORDEX_FRONTEND_IMAGE:?Set KORDEX_FRONTEND_IMAGE to the tested fork image}
+  # The frontend from kordex.4 on stores prototype actions that the official
+  # backend rejects when shapes are duplicated; both images go together.
+  penpot-backend:
+    image: ${KORDEX_BACKEND_IMAGE:?Set KORDEX_BACKEND_IMAGE to the tested fork image}
