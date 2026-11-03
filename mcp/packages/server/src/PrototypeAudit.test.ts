@@ -232,3 +232,35 @@ test("execute_code compatibility preserves user scope, return values and storage
     assert.deepEqual(Object.keys(utils), []);
     assert.equal(new Function("penpot", "penpotUtils", withPrototypeAuditHelper("return 7;"))(f.context, utils), 7);
 });
+
+test("viewport overlays and swaps need no fixed reference", () => {
+    const f = fixture();
+    f.reference.fixedWhenScrolling = false;
+    f.trigger.interactions = [
+        { action: { type: "open-overlay", destination: f.modal, relativeTo: "viewport" } },
+        { action: { type: "swap-overlay", destination: f.modal, relativeTo: "viewport" } },
+    ];
+    const result = PrototypeAudit.run(f.context, { expectFixedOverlays: true });
+    assert.equal(result.summary.errors, 0);
+    assert.equal(result.summary.warnings, 0);
+    assert.equal(result.summary.actions["swap-overlay"], 1);
+});
+
+test("swap overlay references are checked like other overlays", () => {
+    const f = fixture();
+    f.trigger.parent = f.b;
+    f.trigger.interactions = [{ action: { type: "swap-overlay", destination: f.modal, relativeTo: f.reference } }];
+    const result = PrototypeAudit.run(f.context);
+    assert.equal(result.issues[0].code, "reference-outside-screen");
+});
+
+test("scroll destinations can be any layer but must exist", () => {
+    const f = fixture();
+    f.trigger.interactions = [
+        { action: { type: "scroll-to", destination: f.reference } },
+        { action: { type: "scroll-to", destination: shape("gone", "rectangle", f.root) } },
+    ];
+    const result = PrototypeAudit.run(f.context);
+    assert.equal(result.summary.errors, 1);
+    assert.equal(result.issues[0].code, "destination-missing");
+});

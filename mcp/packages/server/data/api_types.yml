@@ -4386,7 +4386,7 @@ CloseOverlay:
     interface CloseOverlay {
         type: "close-overlay";
         destination?: Board;
-        animation?: Animation;
+        animation?: Animation | null;
     }
     ```
 
@@ -4407,10 +4407,12 @@ CloseOverlay:
         The overlay to be closed with this action.
       animation: |-
         ```
-        readonly animation?: Animation
+        readonly animation?: Animation | null
         ```
 
-        Animation displayed with this interaction. Omit it to close with no transition.
+        Animation displayed with this interaction. When omitted, a dissolve of
+        250 ms (150 ms for hover triggers) with `ease-out` easing is used;
+        pass `null` for an instant transition.
 Color:
   overview: |-
     Interface Color
@@ -12692,7 +12694,7 @@ NavigateTo:
         type: "navigate-to";
         destination: Board;
         preserveScrollPosition?: boolean;
-        animation?: Animation;
+        animation?: Animation | null;
     }
     ```
 
@@ -12719,10 +12721,12 @@ NavigateTo:
         When true the scroll will be preserved.
       animation: |-
         ```
-        readonly animation?: Animation
+        readonly animation?: Animation | null
         ```
 
-        Animation displayed with this interaction.
+        Animation displayed with this interaction. When omitted, a dissolve of
+        250 ms (150 ms for hover triggers) with `ease-out` easing is used;
+        pass `null` for an instant transition.
 OpenOverlay:
   overview: |-
     Interface OpenOverlay
@@ -12734,7 +12738,7 @@ OpenOverlay:
     interface OpenOverlay {
         type: "open-overlay";
         destination: Board;
-        relativeTo?: Shape;
+        relativeTo?: Shape | "viewport" | null;
         position?:
             | "center"
             | "manual"
@@ -12747,7 +12751,7 @@ OpenOverlay:
         manualPositionLocation?: Point;
         closeWhenClickOutside?: boolean;
         addBackgroundOverlay?: boolean;
-        animation?: Animation;
+        animation?: Animation | null;
     }
     ```
 
@@ -12773,10 +12777,19 @@ OpenOverlay:
         Overlay board that will be opened.
       relativeTo: |-
         ```
-        readonly relativeTo?: Shape
+        readonly relativeTo?: Shape | "viewport" | null
         ```
 
-        Base shape to which the overlay will be positioned taking constraints into account.
+        Reference used to place the overlay:
+
+        * `'viewport'`: the visible area of the screen. The overlay stays in
+          place while the page below scrolls (modals, drawers, toasts).
+        * a shape: the overlay is positioned against that shape.
+        * `null`: the whole base board (on a long page `center` is the middle
+          of the page, not of the screen).
+
+        When omitted, `'viewport'` is used unless `position` is `'manual'`,
+        which is always measured from the trigger.
       position: |-
         ```
         readonly position?:
@@ -12811,10 +12824,12 @@ OpenOverlay:
         When true a background will be added to the overlay.
       animation: |-
         ```
-        readonly animation?: Animation
+        readonly animation?: Animation | null
         ```
 
-        Animation displayed with this interaction.
+        Animation displayed with this interaction. When omitted, a dissolve of
+        250 ms (150 ms for hover triggers) with `ease-out` easing is used;
+        pass `null` for an instant transition.
 OpenUrl:
   overview: |-
     Interface OpenUrl
@@ -12854,7 +12869,7 @@ OverlayAction:
     ```
     interface OverlayAction {
         destination: Board;
-        relativeTo?: Shape;
+        relativeTo?: Shape | "viewport" | null;
         position?:
             | "center"
             | "manual"
@@ -12867,7 +12882,7 @@ OverlayAction:
         manualPositionLocation?: Point;
         closeWhenClickOutside?: boolean;
         addBackgroundOverlay?: boolean;
-        animation?: Animation;
+        animation?: Animation | null;
     }
     ```
 
@@ -12876,6 +12891,7 @@ OverlayAction:
     * OverlayAction
       + OpenOverlay
       + ToggleOverlay
+      + SwapOverlay
   members:
     Properties:
       destination: |-
@@ -12886,10 +12902,19 @@ OverlayAction:
         Overlay board that will be opened.
       relativeTo: |-
         ```
-        readonly relativeTo?: Shape
+        readonly relativeTo?: Shape | "viewport" | null
         ```
 
-        Base shape to which the overlay will be positioned taking constraints into account.
+        Reference used to place the overlay:
+
+        * `'viewport'`: the visible area of the screen. The overlay stays in
+          place while the page below scrolls (modals, drawers, toasts).
+        * a shape: the overlay is positioned against that shape.
+        * `null`: the whole base board (on a long page `center` is the middle
+          of the page, not of the screen).
+
+        When omitted, `'viewport'` is used unless `position` is `'manual'`,
+        which is always measured from the trigger.
       position: |-
         ```
         readonly position?:
@@ -12924,10 +12949,12 @@ OverlayAction:
         When true a background will be added to the overlay.
       animation: |-
         ```
-        readonly animation?: Animation
+        readonly animation?: Animation | null
         ```
 
-        Animation displayed with this interaction.
+        Animation displayed with this interaction. When omitted, a dissolve of
+        250 ms (150 ms for hover triggers) with `ease-out` easing is used;
+        pass `null` for an instant transition.
 Page:
   overview: |-
     Interface Page
@@ -15717,6 +15744,54 @@ RulerGuide:
         Removes the guide from its page.
 
         Returns void
+ScrollTo:
+  overview: |-
+    Interface ScrollTo
+    ==================
+
+    Scrolls the screen so that the destination layer is at the top of the
+    visible area, like an anchor link. When the layer belongs to another
+    board, the viewer navigates to that board and scrolls there.
+
+    ```
+    interface ScrollTo {
+        type: "scroll-to";
+        destination: Shape;
+        scrollOffset?: Point;
+        animation?: SmartAnimate | null;
+    }
+    ```
+
+    Referenced by: Action
+  members:
+    Properties:
+      type: |-
+        ```
+        readonly type: "scroll-to"
+        ```
+
+        The action type
+      destination: |-
+        ```
+        readonly destination: Shape
+        ```
+
+        Layer to scroll to. Its board scrolls back to the top.
+      scrollOffset: |-
+        ```
+        readonly scrollOffset?: Point
+        ```
+
+        Offset applied to the final scroll position, for example
+        `{ x: 0, y: -80 }` to stop 80px above the layer so a sticky header
+        does not cover it.
+      animation: |-
+        ```
+        readonly animation?: SmartAnimate | null
+        ```
+
+        Smooth scroll. When omitted, a 400 ms `ease-in-out` smart animate is
+        used; pass `null` to jump instantly. Only `smart-animate` is allowed.
 Shadow:
   overview: |-
     Interface Shadow
@@ -16804,6 +16879,47 @@ Slide:
 
         Function that the slide effect will follow for the interpolation.
         Defaults to `linear`.
+SmartAnimate:
+  overview: |-
+    Interface SmartAnimate
+    ======================
+
+    Smart animate: layers with the same name path in both states (screens
+    of a `navigate-to` or overlays of a `swap-overlay`) move and resize from
+    their old geometry to the new one; layers that also look different
+    cross-fade, and layers only present in one state fade in or out.
+    For `scroll-to` it is the smooth scroll itself.
+
+    ```
+    interface SmartAnimate {
+        type: "smart-animate";
+        duration: number;
+        easing?: "linear" | "ease" | "ease-in" | "ease-out" | "ease-in-out";
+    }
+    ```
+
+    Referenced by: Animation, ScrollTo
+  members:
+    Properties:
+      type: |-
+        ```
+        readonly type: "smart-animate"
+        ```
+
+        Type of the animation.
+      duration: |-
+        ```
+        readonly duration: number
+        ```
+
+        Duration of the animation effect. Defaults to 300.
+      easing: |-
+        ```
+        readonly easing?: "linear" | "ease" | "ease-in" | "ease-out" | "ease-in-out"
+        ```
+
+        Function that the animation will follow for the interpolation.
+        Defaults to `ease-out`.
 Stroke:
   overview: |-
     Interface Stroke
@@ -16891,6 +17007,113 @@ Stroke:
         ```
 
         The optional gradient stroke defined by a Gradient object.
+SwapOverlay:
+  overview: |-
+    Interface SwapOverlay
+    =====================
+
+    Replaces an overlay instead of stacking a new one on top (tabs,
+    accordions, wizard steps). Inside an overlay it replaces the overlay
+    holding the trigger; outside, the overlays opened against the same
+    `relativeTo`. The replaced overlay stays visible until the new one has
+    appeared, so the screen below never shows through.
+
+    ```
+    interface SwapOverlay {
+        destination: Board;
+        relativeTo?: Shape | "viewport" | null;
+        position?:
+            | "center"
+            | "manual"
+            | "top-left"
+            | "top-right"
+            | "top-center"
+            | "bottom-left"
+            | "bottom-right"
+            | "bottom-center";
+        manualPositionLocation?: Point;
+        closeWhenClickOutside?: boolean;
+        addBackgroundOverlay?: boolean;
+        animation?: Animation | null;
+        type: "swap-overlay";
+    }
+    ```
+
+    Hierarchy (View Summary)
+
+    * OverlayAction
+      + SwapOverlay
+
+    Referenced by: Action
+  members:
+    Properties:
+      destination: |-
+        ```
+        readonly destination: Board
+        ```
+
+        Overlay board that will be opened.
+      relativeTo: |-
+        ```
+        readonly relativeTo?: Shape | "viewport" | null
+        ```
+
+        Reference used to place the overlay:
+
+        * `'viewport'`: the visible area of the screen. The overlay stays in
+          place while the page below scrolls (modals, drawers, toasts).
+        * a shape: the overlay is positioned against that shape.
+        * `null`: the whole base board (on a long page `center` is the middle
+          of the page, not of the screen).
+
+        When omitted, `'viewport'` is used unless `position` is `'manual'`,
+        which is always measured from the trigger.
+      position: |-
+        ```
+        readonly position?:
+            | "center"
+            | "manual"
+            | "top-left"
+            | "top-right"
+            | "top-center"
+            | "bottom-left"
+            | "bottom-right"
+            | "bottom-center"
+        ```
+
+        Positioning of the overlay.
+      manualPositionLocation: |-
+        ```
+        readonly manualPositionLocation?: Point
+        ```
+
+        For `position = 'manual'` the location of the overlay.
+      closeWhenClickOutside: |-
+        ```
+        readonly closeWhenClickOutside?: boolean
+        ```
+
+        When true the overlay will be closed when clicking outside
+      addBackgroundOverlay: |-
+        ```
+        readonly addBackgroundOverlay?: boolean
+        ```
+
+        When true a background will be added to the overlay.
+      animation: |-
+        ```
+        readonly animation?: Animation | null
+        ```
+
+        Animation displayed with this interaction. When omitted, a dissolve of
+        250 ms (150 ms for hover triggers) with `ease-out` easing is used;
+        pass `null` for an instant transition.
+      type: |-
+        ```
+        readonly type: "swap-overlay"
+        ```
+
+        The action type
 SvgRaw:
   overview: |-
     Interface SvgRaw
@@ -19140,7 +19363,7 @@ ToggleOverlay:
     ```
     interface ToggleOverlay {
         destination: Board;
-        relativeTo?: Shape;
+        relativeTo?: Shape | "viewport" | null;
         position?:
             | "center"
             | "manual"
@@ -19153,7 +19376,7 @@ ToggleOverlay:
         manualPositionLocation?: Point;
         closeWhenClickOutside?: boolean;
         addBackgroundOverlay?: boolean;
-        animation?: Animation;
+        animation?: Animation | null;
         type: "toggle-overlay";
     }
     ```
@@ -19174,10 +19397,19 @@ ToggleOverlay:
         Overlay board that will be opened.
       relativeTo: |-
         ```
-        readonly relativeTo?: Shape
+        readonly relativeTo?: Shape | "viewport" | null
         ```
 
-        Base shape to which the overlay will be positioned taking constraints into account.
+        Reference used to place the overlay:
+
+        * `'viewport'`: the visible area of the screen. The overlay stays in
+          place while the page below scrolls (modals, drawers, toasts).
+        * a shape: the overlay is positioned against that shape.
+        * `null`: the whole base board (on a long page `center` is the middle
+          of the page, not of the screen).
+
+        When omitted, `'viewport'` is used unless `position` is `'manual'`,
+        which is always measured from the trigger.
       position: |-
         ```
         readonly position?:
@@ -19212,10 +19444,12 @@ ToggleOverlay:
         When true a background will be added to the overlay.
       animation: |-
         ```
-        readonly animation?: Animation
+        readonly animation?: Animation | null
         ```
 
-        Animation displayed with this interaction.
+        Animation displayed with this interaction. When omitted, a dissolve of
+        250 ms (150 ms for hover triggers) with `ease-out` easing is used;
+        pass `null` for an instant transition.
       type: |-
         ```
         readonly type: "toggle-overlay"
@@ -22692,7 +22926,9 @@ Action:
         | NavigateTo
         | OpenOverlay
         | ToggleOverlay
+        | SwapOverlay
         | CloseOverlay
+        | ScrollTo
         | PreviousScreen
         | OpenUrl
     ```
@@ -22707,12 +22943,12 @@ Animation:
     ====================
 
     ```
-    Animation: Dissolve | Slide | Push
+    Animation: Dissolve | Slide | Push | SmartAnimate
     ```
 
     Type of all the animations that can be added to an interaction.
 
-    Referenced by: CloseOverlay, NavigateTo, OpenOverlay, OverlayAction, ToggleOverlay
+    Referenced by: CloseOverlay, NavigateTo, OpenOverlay, OverlayAction, SwapOverlay, ToggleOverlay
   members: {}
 BooleanType:
   overview: |-
@@ -23132,12 +23368,14 @@ Trigger:
     ==================
 
     ```
-    Trigger: "click" | "mouse-enter" | "mouse-leave" | "after-delay"
+    Trigger: "click" | "mouse-over" | "mouse-enter" | "mouse-leave" | "after-delay"
     ```
 
     Types of triggers defined:
 
     * `click` triggers when the user uses the mouse to click on a shape
+    * `mouse-over` runs the action while the mouse is over the shape and reverts it when the mouse
+      leaves both the shape and the overlay it opened (hover states and tooltips).
     * `mouse-enter` triggers when the user moves the mouse inside the shape (even if no mouse button is pressed)
     * `mouse-leave` triggers when the user moves the mouse outside the shape.
     * `after-delay` triggers after the `delay` time has passed even if no interaction from the user happens.

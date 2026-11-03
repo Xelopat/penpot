@@ -400,6 +400,82 @@ Removing tokens:
   Simply set the respective property directly - token binding is automatically removed, e.g.
   shape.fills = [{ fillColor: "#000000", fillOpacity: 1 }]; // Removes fill token
 
+# Prototypes: Interactions, Overlays and Animations
+
+Interactions are added with `shape.addInteraction(trigger, action, delay?)`.
+The viewer behaves as follows; follow these rules, otherwise links "jump" to other screens, overlays open in the wrong place and animations are lost.
+
+**Screens and navigation**
+  * Destinations must be top-level boards on the SAME page. The viewer cannot navigate to boards on other pages,
+    so keep every screen of one flow on one page.
+  * `navigate-to` replaces the whole screen. Use it only for real page changes (home → catalog), never for tabs,
+    accordions, steppers or selections inside a section (use `swap-overlay`, below).
+  * Menu links to a section of the SAME long page use `scroll-to` (below), not `navigate-to`.
+  * When the destination is another state of the same page, pass `preserveScrollPosition: true`.
+
+**Animations** (the `animation` field of `navigate-to`, `open-overlay`, `toggle-overlay`, `swap-overlay`, `close-overlay`, `scroll-to`)
+  * Omitted `animation` = a default dissolve of 250 ms `ease-out` (150 ms for hover triggers; scroll-to: 400 ms smooth scroll).
+    Pass `animation: null` only when an instant change is really wanted.
+  * `dissolve`: `{ type, duration, easing }`
+  * `slide`: `{ type, way: "in" | "out", direction: "right" | "left" | "up" | "down", duration, easing, offsetEffect }` (`offsetEffect` only affects `navigate-to`)
+  * `push`: `{ type, direction, duration, easing }`; valid ONLY for `navigate-to`. The plugin API still stores push on
+    overlay actions, but the editor treats that combination as invalid, so never use it there.
+  * `smart-animate`: `{ type, duration, easing }`; valid ONLY for `navigate-to`, `swap-overlay` and `scroll-to`.
+    Layers with the same name path (names of the layer and its parents inside the board, e.g. "Card/Title") in both
+    states move and resize from the old geometry to the new one; layers that also look different (fill, text, opacity…)
+    cross-fade; layers present in only one state fade in/out. Give corresponding layers identical, unique names.
+  * `easing`: "linear" | "ease" | "ease-in" | "ease-out" | "ease-in-out"; `duration` is an integer in ms
+  * Malformed animations (e.g. slide without `way`/`direction`) can be dropped. After adding, read back
+    `shape.interactions.at(-1).action.animation`: `null` means no animation was stored.
+
+**Overlay positioning** (`open-overlay`, `toggle-overlay`, `swap-overlay`)
+  * `relativeTo` decides what positions ("center", "top-left", "bottom-center", ...) are measured against:
+    - omitted or `"viewport"`: the visible area of the screen. The overlay stays on screen while the page below scrolls.
+      This is the right choice for modals, dialogs, drawers, bottom sheets, cookie bars and toasts.
+    - a shape: positioned against that shape (anchors for in-place states, dropdowns under a button).
+    - `null`: the whole base board. On a long page "center" is then the middle of the PAGE (e.g. y=5000): avoid it.
+  * Modals: `position: "center"` (no `relativeTo`), `addBackgroundOverlay: true`, `closeWhenClickOutside: true`
+    and an entry animation such as `{ type: "slide", way: "in", direction: "up", duration: 300, easing: "ease-out" }`.
+  * `position: "manual"` is measured from the trigger itself (or from the trigger's parent board if the trigger is a board).
+    Avoid it unless an offset from the trigger is really needed; anchors (below) are more predictable.
+
+**In-place state changes: tabs, accordions, steppers, carousels** (they must not navigate and must not stack)
+  * Build each state as a top-level board with exactly the size of the area it replaces.
+  * In the base board, place a transparent anchor (`fills = []`, sent to the back) exactly where the state should appear.
+  * Every tab/step button: `swap-overlay` to its state board with `relativeTo: anchor`, `position: "top-left"`,
+    `addBackgroundOverlay: false`, `closeWhenClickOutside: false`. `swap-overlay` replaces the overlay already shown at
+    the same anchor instead of stacking a new one (the first click simply opens it).
+  * Buttons INSIDE an opened state board (e.g. "Next" in a wizard step, a tab bar drawn inside each state) also use
+    `swap-overlay`: inside an overlay it replaces the overlay that holds the button. Keep `relativeTo: anchor`.
+  * Use `animation: { type: "smart-animate", duration: 300, easing: "ease-out" }` so matching layers (the active tab
+    indicator, a card that grows) glide between states; keep the same layer names in every state.
+  * Accordions/dropdowns that open and close on the same click: `toggle-overlay` with `relativeTo: anchor`.
+  * Inside a modal, a "next step" button: `swap-overlay` to the next modal board without `relativeTo`
+    (it stays centered on screen and the previous step is replaced, not stacked).
+
+**Scroll to a section (anchor links)**
+  * `{ type: "scroll-to", destination: sectionShape, scrollOffset: { x: 0, y: -headerHeight } }` scrolls the
+    current screen so the section's top is at the top of the screen. Use a negative `scrollOffset.y` equal to the
+    height of a sticky header so it does not cover the section title.
+  * `destination` can be any layer; when it is on another board, the viewer navigates there and scrolls to it.
+    Using the board itself as destination scrolls back to the top ("back to top" buttons).
+  * Default animation is a 400 ms smooth scroll; set `{ type: "smart-animate", duration, easing }` to tune it or `null` to jump.
+
+**Hover and timed effects**
+  * Triggers: "click", "mouse-press" (while pressed), "mouse-over" (while hovering), "mouse-enter", "mouse-leave", "after-delay" (boards only).
+  * "mouse-over" + `open-overlay` is the hover state: it opens on pointer-enter and closes when the pointer leaves BOTH the
+    trigger and the overlay it opened, so a hover-state board that covers the element does not flicker.
+    Place it with `relativeTo:` the element, `position: "top-left"`, `addBackgroundOverlay: false`. Clicks on the
+    hover board that it does not handle itself are passed to the element below, so the element's click interactions
+    keep working. Keep hover animations short (default 150 ms dissolve).
+  * Tooltips: "mouse-over" + `open-overlay` with `relativeTo:` the element and e.g. `position: "bottom-center"` of an anchor below it.
+  * Auto-play (slideshows, hints): an "after-delay" interaction on a board with `delay` in ms.
+
+**Checks**
+  * `shape.clone()` copies interactions that still point to the original destinations and anchors; re-target them after cloning.
+  * Run `audit_prototype` (use `expectFixedOverlays: true` for pages with modals) after wiring. It checks structure only:
+    open the View mode to confirm positions and animations.
+
 # Visual Inspection of Designs
 
 For many tasks, it can be critical to visually inspect the design. Remember to use the `export_shape` tool for this purpose!

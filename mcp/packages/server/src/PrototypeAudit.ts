@@ -14,8 +14,10 @@ export interface AuditShape {
 export interface AuditAction {
     readonly type: string;
     readonly destination?: AuditShape | null;
-    readonly relativeTo?: AuditShape | null;
+    readonly relativeTo?: AuditShape | "viewport" | null;
 }
+
+const OVERLAY_ACTIONS = ["open-overlay", "toggle-overlay", "swap-overlay"];
 
 export interface AuditPage {
     readonly id: string;
@@ -141,7 +143,7 @@ export class PrototypeAudit {
                 const id = action.destination?.id;
                 if (!id) continue;
                 if (action.type === "navigate-to") screenTargets.add(id);
-                if (action.type === "open-overlay" || action.type === "toggle-overlay") overlayTargets.add(id);
+                if (OVERLAY_ACTIONS.includes(action.type)) overlayTargets.add(id);
             }
         }
         let errorCount = 0;
@@ -179,10 +181,19 @@ export class PrototypeAudit {
             for (const { action } of interactions) {
                 interactionCount++;
                 actions.set(action.type, (actions.get(action.type) ?? 0) + 1);
-                const overlay = action.type === "open-overlay" || action.type === "toggle-overlay";
+                const overlay = OVERLAY_ACTIONS.includes(action.type);
                 const navigate = action.type === "navigate-to";
                 const destinationId = action.destination?.id;
                 const destination = destinationId ? shapes.get(destinationId) : undefined;
+                if (action.type === "scroll-to" && !destination) {
+                    add({
+                        severity: "error",
+                        code: "destination-missing",
+                        shape: source,
+                        destinationId,
+                        message: "The scroll destination does not exist on this page.",
+                    });
+                }
                 if (navigate || overlay || (action.type === "close-overlay" && action.destination)) {
                     if (!destination) {
                         add({
@@ -226,8 +237,11 @@ export class PrototypeAudit {
                         });
                     }
                 }
-                if (overlay && action.relativeTo) {
-                    const referenceId = action.relativeTo.id;
+                // A viewport overlay sits in the visible area and stays fixed while scrolling
+                const relativeTo = action.relativeTo;
+                const viewport = relativeTo === "viewport";
+                if (overlay && relativeTo && relativeTo !== "viewport") {
+                    const referenceId = relativeTo.id;
                     const reference = referenceId ? shapes.get(referenceId) : undefined;
                     if (!reference) {
                         add({
@@ -258,12 +272,13 @@ export class PrototypeAudit {
                             });
                         }
                     }
-                } else if (overlay && options.expectFixedOverlays) {
+                } else if (overlay && !viewport && options.expectFixedOverlays) {
                     add({
                         severity: "warning",
                         code: "fixed-reference-unspecified",
                         shape: source,
-                        message: "Automatic positioning has no explicit fixed reference; verify the intended behavior.",
+                        message:
+                            "Positioned against the whole base board; use relativeTo: 'viewport' to keep it on screen.",
                     });
                 }
             }
