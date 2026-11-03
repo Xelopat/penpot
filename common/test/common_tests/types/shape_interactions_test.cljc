@@ -1107,3 +1107,154 @@
             [overlay-pos snap] (ctsi/calc-overlay-position frame-relative base-frame objects base-frame base-frame overlay-frame frame-offset)]
         (t/is (= (gpt/point 18 22) overlay-pos))
         (t/is (= [:top :left] snap))))))
+
+(t/deftest relative-to-viewport
+  (let [shape   (cts/setup-shape {:type :rect})
+        overlay (-> ctsi/default-interaction
+                    (ctsi/set-action-type :open-overlay)
+                    (ctsi/set-position-relative-to (:id shape)))]
+
+    (t/testing "Setting the viewport reference clears the shape reference"
+      (let [interaction (ctsi/set-relative-to-viewport overlay true)]
+        (t/is (true? (:relative-to-viewport interaction)))
+        (t/is (nil? (:position-relative-to interaction)))
+        (t/is (ctsi/relative-to-viewport? interaction))
+        (t/is (ctsi/check-interaction interaction))))
+
+    (t/testing "Setting a shape reference clears the viewport reference"
+      (let [interaction (-> overlay
+                            (ctsi/set-relative-to-viewport true)
+                            (ctsi/set-position-relative-to (:id shape)))]
+        (t/is (nil? (:relative-to-viewport interaction)))
+        (t/is (= (:id shape) (:position-relative-to interaction)))))
+
+    (t/testing "Manual positions are never relative to the viewport"
+      (let [interaction (-> overlay
+                            (ctsi/set-relative-to-viewport true)
+                            (assoc :overlay-pos-type :manual))]
+        (t/is (not (ctsi/relative-to-viewport? interaction)))))
+
+    (t/testing "Only overlay actions accept the viewport reference"
+      (t/is (ex/exception? (ex/try! (ctsi/set-relative-to-viewport ctsi/default-interaction true)))))))
+
+(t/deftest calc-overlay-viewport-position
+  (let [viewport    {:x 0 :y 3000 :width 1440 :height 900}
+        size        {:width 400 :height 300}
+        interaction (-> ctsi/default-interaction
+                        (ctsi/set-action-type :open-overlay)
+                        (ctsi/set-relative-to-viewport true))
+        calc        (fn [pos-type]
+                      (ctsi/calc-overlay-viewport-position
+                       (assoc interaction :overlay-pos-type pos-type) size viewport))]
+
+    (t/testing "Center is the middle of the visible area, not of the long board"
+      (t/is (= [(gpt/point 520 3300) [:center :center]] (calc :center))))
+
+    (t/testing "Corner and edge presets"
+      (t/is (= [(gpt/point 0 3000) [:top :left]] (calc :top-left)))
+      (t/is (= [(gpt/point 1040 3000) [:top :right]] (calc :top-right)))
+      (t/is (= [(gpt/point 520 3000) [:top :center]] (calc :top-center)))
+      (t/is (= [(gpt/point 0 3600) [:bottom :left]] (calc :bottom-left)))
+      (t/is (= [(gpt/point 1040 3600) [:bottom :right]] (calc :bottom-right)))
+      (t/is (= [(gpt/point 520 3600) [:bottom :center]] (calc :bottom-center))))
+
+    (t/testing "Manual offsets are measured from the visible area"
+      (let [manual (assoc interaction
+                          :overlay-pos-type :manual
+                          :overlay-position (gpt/point 10 20))]
+        (t/is (= [(gpt/point 10 3020) [:top :left]]
+                 (ctsi/calc-overlay-viewport-position manual size viewport)))))))
+
+(t/deftest new-action-types
+  (let [shape (cts/setup-shape {:type :rect})
+        dest  (uuid/next)]
+
+    (t/testing "Scroll to keeps a destination and a scroll offset"
+      (let [interaction (-> ctsi/default-interaction
+                            (ctsi/set-action-type :scroll-to)
+                            (ctsi/set-destination dest)
+                            (ctsi/set-scroll-offset (gpt/point 0 -80)))]
+        (t/is (ctsi/check-interaction interaction))
+        (t/is (= dest (:destination interaction)))
+        (t/is (= (gpt/point 0 -80) (:scroll-offset interaction)))
+        (t/is (ctsi/has-destination interaction))
+        (t/is (not (ctsi/has-overlay-opts interaction)))
+        (t/is (ctsi/has-animation? interaction))))
+
+    (t/testing "Swap overlay has overlay options"
+      (let [interaction (-> ctsi/default-interaction
+                            (ctsi/set-action-type :swap-overlay)
+                            (ctsi/set-destination dest))]
+        (t/is (ctsi/check-interaction interaction))
+        (t/is (ctsi/has-overlay-opts interaction))
+        (t/is (= :center (:overlay-pos-type interaction)))
+        (t/is (ctsi/flow-origin? [interaction]))
+        (t/is (ctsi/flow-to? [interaction] dest))))
+
+    (t/testing "Scroll offset is only valid for scroll to"
+      (t/is (ex/exception? (ex/try! (ctsi/set-scroll-offset ctsi/default-interaction (gpt/point 0 0))))))
+
+    (t/testing "Scroll to is not a flow origin"
+      (let [interaction (-> ctsi/default-interaction
+                            (ctsi/set-action-type :scroll-to)
+                            (ctsi/set-destination (:id shape)))]
+        (t/is (not (ctsi/flow-origin? [interaction])))))))
+
+(t/deftest smart-animate
+  (let [navigate (ctsi/set-animation-type ctsi/default-interaction :smart-animate)]
+
+    (t/testing "Smart animate defaults"
+      (t/is (= {:animation-type :smart-animate :duration 300 :easing :ease-out}
+               (:animation navigate)))
+      (t/is (ctsi/check-interaction navigate))
+      (t/is (ctsi/has-duration? navigate))
+      (t/is (ctsi/has-easing? navigate))
+      (t/is (not (ctsi/has-direction? navigate)))
+      (t/is (not (ctsi/has-way? navigate))))
+
+    (t/testing "Smart animate drops properties of other animations"
+      (let [slide  (ctsi/set-animation-type ctsi/default-interaction :slide)
+            result (ctsi/set-animation-type (ctsi/set-duration slide 700) :smart-animate)]
+        (t/is (= {:animation-type :smart-animate :duration 700 :easing :linear}
+                 (:animation result)))))
+
+    (t/testing "Allowed action types"
+      (t/is (ctsi/allowed-animation? :navigate :smart-animate))
+      (t/is (ctsi/allowed-animation? :swap-overlay :smart-animate))
+      (t/is (ctsi/allowed-animation? :scroll-to :smart-animate))
+      (t/is (not (ctsi/allowed-animation? :open-overlay :smart-animate)))
+      (t/is (not (ctsi/allowed-animation? :scroll-to :dissolve)))
+      (t/is (not (ctsi/allowed-animation? :swap-overlay :push))))
+
+    (t/testing "Changing to an action that does not support it removes it"
+      (t/is (nil? (:animation (ctsi/set-action-type navigate :open-overlay))))
+      (t/is (some? (:animation (ctsi/set-action-type navigate :swap-overlay))))
+      (t/is (nil? (:animation (ctsi/set-action-type
+                               (ctsi/set-animation-type ctsi/default-interaction :dissolve)
+                               :scroll-to)))))))
+
+(t/deftest default-animation
+  (t/testing "Transitions get a short dissolve"
+    (t/is (= {:animation-type :dissolve :duration 250 :easing :ease-out}
+             (ctsi/default-animation :navigate :click)))
+    (t/is (= {:animation-type :dissolve :duration 250 :easing :ease-out}
+             (ctsi/default-animation :swap-overlay :click))))
+
+  (t/testing "Hover transitions are shorter"
+    (t/is (= 150 (:duration (ctsi/default-animation :open-overlay :mouse-enter))))
+    (t/is (= 150 (:duration (ctsi/default-animation :open-overlay :mouse-over)))))
+
+  (t/testing "Scrolling is smooth"
+    (t/is (= {:animation-type :smart-animate :duration 400 :easing :ease-in-out}
+             (ctsi/default-animation :scroll-to :click))))
+
+  (t/testing "Actions without animation"
+    (t/is (nil? (ctsi/default-animation :open-url :click)))
+    (t/is (nil? (ctsi/default-animation :prev-screen :click))))
+
+  (t/testing "Default animations are always allowed and valid"
+    (doseq [action-type ctsi/action-types
+            :let [animation (ctsi/default-animation action-type :click)]
+            :when animation]
+      (t/is (ctsi/allowed-animation? action-type (:animation-type animation)))
+      (t/is (ctsi/check-animation! animation)))))

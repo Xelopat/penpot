@@ -41,7 +41,9 @@
     :toggle-overlay
     :close-overlay
     :prev-screen
-    :open-url})
+    :open-url
+    :scroll-to
+    :swap-overlay})
 
 (def overlay-positioning-types
   #{:manual
@@ -70,7 +72,7 @@
   #{:in :out})
 
 (def animation-types
-  #{:dissolve :slide :push})
+  #{:dissolve :slide :push :smart-animate})
 
 (def schema:dissolve-animation
   [:map {:title "AnimationDisolve"}
@@ -97,16 +99,24 @@
    [:easing [::sm/one-of easing-types]]
    [:direction [::sm/one-of direction-types]]])
 
+(def schema:smart-animate-animation
+  [:map {:title "SmartAnimateAnimation"}
+   [:animation-type [:= :smart-animate]]
+   [:duration ::sm/safe-int]
+   [:easing [::sm/one-of easing-types]]])
+
 (def schema:animation
   [:multi {:dispatch :animation-type
            :title "Animation"
            :gen/gen (sg/one-of (sg/generator schema:dissolve-animation)
                                (sg/generator schema:slide-animation)
-                               (sg/generator schema:push-animation))
+                               (sg/generator schema:push-animation)
+                               (sg/generator schema:smart-animate-animation))
            :decode/json #(update % :animation-type keyword)}
    [:dissolve schema:dissolve-animation]
    [:slide schema:slide-animation]
-   [:push schema:push-animation]])
+   [:push schema:push-animation]
+   [:smart-animate schema:smart-animate-animation]])
 
 (sm/register! ::animation schema:animation)
 
@@ -125,6 +135,8 @@
    [:close-click-outside {:optional true} :boolean]
    [:background-overlay {:optional true} :boolean]
    [:position-relative-to {:optional true} [:maybe ::sm/uuid]]
+   [:relative-to-viewport {:optional true} :boolean]
+   [:scroll-offset {:optional true} ::gpt/point]
    [:url {:optional true} :string]])
 
 (def schema:navigate-interaction
@@ -145,7 +157,8 @@
    [:close-click-outside {:optional true} :boolean]
    [:background-overlay {:optional true} :boolean]
    [:animation {:optional true} schema:animation]
-   [:position-relative-to {:optional true} [:maybe ::sm/uuid]]])
+   [:position-relative-to {:optional true} [:maybe ::sm/uuid]]
+   [:relative-to-viewport {:optional true} :boolean]])
 
 (def schema:toggle-overlay-interaction
   [:map {:title "ToggleOverlayInteraction"}
@@ -157,7 +170,29 @@
    [:close-click-outside {:optional true} :boolean]
    [:background-overlay {:optional true} :boolean]
    [:animation {:optional true} schema:animation]
-   [:position-relative-to {:optional true} [:maybe ::sm/uuid]]])
+   [:position-relative-to {:optional true} [:maybe ::sm/uuid]]
+   [:relative-to-viewport {:optional true} :boolean]])
+
+(def schema:swap-overlay-interaction
+  [:map {:title "SwapOverlayInteraction"}
+   [:action-type [:= :swap-overlay]]
+   [:event-type [::sm/one-of event-types]]
+   [:overlay-position {:optional true} ::gpt/point]
+   [:overlay-pos-type {:optional true} [::sm/one-of overlay-positioning-types]]
+   [:destination {:optional true} [:maybe ::sm/uuid]]
+   [:close-click-outside {:optional true} :boolean]
+   [:background-overlay {:optional true} :boolean]
+   [:animation {:optional true} schema:animation]
+   [:position-relative-to {:optional true} [:maybe ::sm/uuid]]
+   [:relative-to-viewport {:optional true} :boolean]])
+
+(def schema:scroll-to-interaction
+  [:map {:title "ScrollToInteraction"}
+   [:action-type [:= :scroll-to]]
+   [:event-type [::sm/one-of event-types]]
+   [:destination {:optional true} [:maybe ::sm/uuid]]
+   [:scroll-offset {:optional true} ::gpt/point]
+   [:animation {:optional true} schema:animation]])
 
 (def schema:close-overlay-interaction
   [:map {:title "CloseOverlayInteraction"}
@@ -185,7 +220,9 @@
                                 (sg/generator schema:close-overlay-interaction)
                                 (sg/generator schema:toggle-overlay-interaction)
                                 (sg/generator schema:prev-scren-interaction)
-                                (sg/generator schema:open-url-interaction))}
+                                (sg/generator schema:open-url-interaction)
+                                (sg/generator schema:swap-overlay-interaction)
+                                (sg/generator schema:scroll-to-interaction))}
    [:and
     schema:generic-interaction-attrs
     [:multi {:dispatch :action-type :title "InteractionAttrs"}
@@ -194,7 +231,9 @@
      [:toggle-overlay schema:toggle-overlay-interaction]
      [:close-overlay schema:close-overlay-interaction]
      [:prev-screen schema:prev-scren-interaction]
-     [:open-url schema:open-url-interaction]]]])
+     [:open-url schema:open-url-interaction]
+     [:swap-overlay schema:swap-overlay-interaction]
+     [:scroll-to schema:scroll-to-interaction]]]])
 
 (def check-interaction
   (sm/check-fn schema:interaction))
@@ -212,10 +251,37 @@
 
 (def default-delay 600)
 
+(def default-animation-duration 250)
+(def default-hover-animation-duration 150)
+(def default-scroll-duration 400)
+
+(defn default-animation
+  "The animation given to new interactions, so prototype transitions are
+  not instant unless the author explicitly removes the animation."
+  [action-type event-type]
+  (case action-type
+    (:navigate :open-overlay :toggle-overlay :close-overlay :swap-overlay)
+    {:animation-type :dissolve
+     :duration (if (contains? #{:mouse-over :mouse-enter :mouse-leave} event-type)
+                 default-hover-animation-duration
+                 default-animation-duration)
+     :easing :ease-out}
+
+    :scroll-to
+    {:animation-type :smart-animate
+     :duration default-scroll-duration
+     :easing :ease-in-out}
+
+    nil))
+
 ;; -- Helpers for interaction
 
 (declare calc-overlay-pos-initial)
 (declare allowed-animation?)
+
+(defn has-overlay-opts
+  [interaction]
+  (#{:open-overlay :toggle-overlay :swap-overlay} (:action-type interaction)))
 
 (defn set-event-type
   [interaction event-type shape]
@@ -255,7 +321,7 @@
                    :destination (get interaction :destination)
                    :preserve-scroll (get interaction :preserve-scroll false))
 
-            (:open-overlay :toggle-overlay)
+            (:open-overlay :toggle-overlay :swap-overlay)
             (let [overlay-pos-type (get interaction :overlay-pos-type :center)
                   overlay-position (get interaction :overlay-position (gpt/point 0 0))]
               (assoc interaction
@@ -264,6 +330,11 @@
                      :overlay-position overlay-position))
 
             :close-overlay
+            (assoc interaction
+                   :action-type action-type
+                   :destination (get interaction :destination))
+
+            :scroll-to
             (assoc interaction
                    :action-type action-type
                    :destination (get interaction :destination))
@@ -303,7 +374,7 @@
 
 (defn has-destination
   [interaction]
-  (#{:navigate :open-overlay :toggle-overlay :close-overlay}
+  (#{:navigate :open-overlay :toggle-overlay :close-overlay :swap-overlay :scroll-to}
    (:action-type interaction)))
 
 (defn destination?
@@ -321,8 +392,7 @@
     :always
     (assoc :destination destination)
 
-    (or (= (:action-type interaction) :open-overlay)
-        (= (:action-type interaction) :toggle-overlay))
+    (has-overlay-opts interaction)
     (assoc :overlay-pos-type :center
            :overlay-position (gpt/point 0 0))))
 
@@ -355,10 +425,6 @@
           "expected compatible interaction map with url param")
 
   (assoc interaction :url url))
-
-(defn has-overlay-opts
-  [interaction]
-  (#{:open-overlay :toggle-overlay} (:action-type interaction)))
 
 (defn set-overlay-pos-type
   [interaction overlay-pos-type shape objects]
@@ -440,7 +506,48 @@
   (assert (has-overlay-opts interaction)
           "expected compatible interaction map")
 
-  (assoc interaction :position-relative-to position-relative-to))
+  (-> interaction
+      (assoc :position-relative-to position-relative-to)
+      (dissoc :relative-to-viewport)))
+
+(defn relative-to-viewport?
+  "Check if the overlay is positioned relative to the visible area of the
+  screen instead of a shape. Manual positions are always relative to the
+  trigger."
+  [interaction]
+  (and (has-overlay-opts interaction)
+       (true? (:relative-to-viewport interaction))
+       (not= :manual (:overlay-pos-type interaction))))
+
+(defn set-relative-to-viewport
+  [interaction relative-to-viewport]
+
+  (assert (check-interaction interaction))
+  (assert (boolean? relative-to-viewport)
+          "expected boolean value for `relative-to-viewport`")
+  (assert (has-overlay-opts interaction)
+          "expected compatible interaction map")
+
+  (if relative-to-viewport
+    (assoc interaction
+           :relative-to-viewport true
+           :position-relative-to nil)
+    (dissoc interaction :relative-to-viewport)))
+
+(defn has-scroll-offset?
+  [interaction]
+  (= (:action-type interaction) :scroll-to))
+
+(defn set-scroll-offset
+  [interaction scroll-offset]
+
+  (assert (check-interaction interaction))
+  (assert (gpt/point? scroll-offset)
+          "expected valid point for `scroll-offset`")
+  (assert (has-scroll-offset? interaction)
+          "expected compatible interaction map")
+
+  (assoc interaction :scroll-offset scroll-offset))
 
 (defn- calc-overlay-pos-initial
   [destination shape objects overlay-pos-type]
@@ -540,22 +647,56 @@
                       (+ (:y base-position) (:y overlay-position)))
            [:top :left]])))))
 
+(defn calc-overlay-viewport-position
+  "Position of an overlay that is positioned relative to the visible area
+  of the screen. `viewport` is the visible rect `{:x :y :width :height}`
+  expressed in base frame coordinates, and `overlay-size` the size of the
+  overlay frame. Returns the same `[position snap-to]` pair as
+  `calc-overlay-position`."
+  [interaction overlay-size viewport]
+  (let [{vx :x vy :y vw :width vh :height} viewport
+        {ow :width oh :height} overlay-size
+        center-x (+ vx (/ (- vw ow) 2))
+        center-y (+ vy (/ (- vh oh) 2))
+        right-x  (+ vx (- vw ow))
+        bottom-y (+ vy (- vh oh))]
+    (case (:overlay-pos-type interaction)
+      :top-left      [(gpt/point vx vy) [:top :left]]
+      :top-right     [(gpt/point right-x vy) [:top :right]]
+      :top-center    [(gpt/point center-x vy) [:top :center]]
+      :bottom-left   [(gpt/point vx bottom-y) [:bottom :left]]
+      :bottom-right  [(gpt/point right-x bottom-y) [:bottom :right]]
+      :bottom-center [(gpt/point center-x bottom-y) [:bottom :center]]
+      :manual        (let [offset (or (:overlay-position interaction) (gpt/point 0 0))]
+                       [(gpt/point (+ vx (:x offset)) (+ vy (:y offset))) [:top :left]])
+      [(gpt/point center-x center-y) [:center :center]])))
+
 (defn has-animation?
   [interaction]
-  (#{:navigate :open-overlay :close-overlay :toggle-overlay} (:action-type interaction)))
+  (#{:navigate :open-overlay :close-overlay :toggle-overlay :swap-overlay :scroll-to}
+   (:action-type interaction)))
 
 (defn allow-push?
   [action-type]
   ; Push animation is not allowed for overlay actions
   (= :navigate action-type))
 
+(defn allow-smart-animate?
+  [action-type]
+  ; Smart animate interpolates layers between two screens or two overlay
+  ; states; for scroll-to it is the smooth scroll itself.
+  (contains? #{:navigate :swap-overlay :scroll-to} action-type))
+
 (defn allowed-animation?
   [action-type animation-type]
   ; Some specific combinations are forbidden, but may occur if the action type
   ; is changed from a type that allows the animation to another one that doesn't.
-  ; Currently the only case is an overlay action with push animation.
-  (or (not= animation-type :push)
-      (allow-push? action-type)))
+  (case animation-type
+    nil            true
+    :push          (allow-push? action-type)
+    :smart-animate (allow-smart-animate? action-type)
+    ;; scroll-to only scrolls, so it only supports the smooth scroll
+    (not= action-type :scroll-to)))
 
 (defn set-animation-type
   [interaction animation-type]
@@ -594,11 +735,18 @@
         (update :animation assoc
                 :duration (get-in interaction [:animation :duration] 300)
                 :easing (get-in interaction [:animation :easing] :linear)
-                :direction (get-in interaction [:animation :direction] :right))))))
+                :direction (get-in interaction [:animation :direction] :right))
+
+        (= animation-type :smart-animate)
+        (update :animation
+                (fn [animation]
+                  {:animation-type :smart-animate
+                   :duration (get animation :duration 300)
+                   :easing (get animation :easing :ease-out)}))))))
 
 (defn has-duration?
   [interaction]
-  (#{:dissolve :slide :push} (-> interaction :animation :animation-type)))
+  (#{:dissolve :slide :push :smart-animate} (-> interaction :animation :animation-type)))
 
 (defn set-duration
   [interaction duration]
@@ -612,7 +760,7 @@
 
 (defn has-easing?
   [interaction]
-  (#{:dissolve :slide :push} (-> interaction :animation :animation-type)))
+  (#{:dissolve :slide :push :smart-animate} (-> interaction :animation :animation-type)))
 
 (defn set-easing
   [interaction easing]
@@ -759,13 +907,13 @@
 (defn flow-origin?
   "Check if there is any interaction that is the start or the continuation of a flow"
   [interactions]
-  (some #(and (#{:navigate :open-overlay :toggle-overlay :close-overlay} (:action-type %))
+  (some #(and (#{:navigate :open-overlay :toggle-overlay :close-overlay :swap-overlay} (:action-type %))
               (some? (:destination %)))
         interactions))
 
 (defn flow-to?
   "Check if there is any interaction that flows into the given frame"
   [interactions frame-id]
-  (some #(and (#{:navigate :open-overlay :toggle-overlay :close-overlay} (:action-type %))
+  (some #(and (#{:navigate :open-overlay :toggle-overlay :close-overlay :swap-overlay} (:action-type %))
               (= (:destination %) frame-id))
         interactions))
