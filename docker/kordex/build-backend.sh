@@ -23,9 +23,8 @@ test -s target/classes/version.txt || { echo 'Official version not found'; exit 
 cp ../CHANGES.md target/classes/changelog.md
 clojure -T:build jar
 
-# The jar is not AOT compiled: load the shared schema from it to catch
-# missing or broken namespaces before publishing.
+# The jar is not AOT compiled: load the shared schema from it and check
+# that the changes the fork frontend sends are accepted before publishing.
+java -cp target/penpot.jar clojure.main /workspace/docker/kordex/check-schema.clj
 java -cp target/penpot.jar clojure.main -e \
-  "(require 'app.common.files.changes 'app.common.types.shape.interactions)
-   (assert (contains? app.common.types.shape.interactions/action-types :scroll-to))
-   (println :kordex-backend-ok (slurp (clojure.java.io/resource \"version.txt\")))"
+  "(println :kordex-backend-version (slurp (clojure.java.io/resource \"version.txt\")))"
