@@ -721,6 +721,7 @@
    ;;                  :viewport or nil), used to find overlays to swap
    ;;   :source-id     the shape that opened the overlay
    ;;   :hover-source? the overlay was opened while hovering its source
+   ;;   :hover-close?  it closes when the pointer leaves it
    ;;   :swap-from     the overlay this one replaces
    (cond-> state
      :always
@@ -840,11 +841,16 @@
           (nil? frame)
           state
 
-          ;; Already visible: only drop the others
+          ;; Already visible (maybe being replaced): keep it and drop the others
           open?
-          (update state :viewer-overlays
-                  (fn [overlays]
-                    (d/removev #(contains? replace-ids (:id %)) overlays)))
+          (-> state
+              (update :viewer-overlays
+                      (fn [overlays]
+                        (into []
+                              (comp (remove #(contains? replace-ids (:id %)))
+                                    (map #(cond-> % (= (:id %) frame-id) (dissoc :replaced-by))))
+                              overlays)))
+              (update :viewer-animations #(not-empty (apply dissoc % replace-ids))))
 
           :else
           (-> state

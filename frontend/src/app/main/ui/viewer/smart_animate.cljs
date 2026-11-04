@@ -326,14 +326,20 @@
 
         (dom/set-css-property! from-node "visibility" "hidden")
 
-        (let [done (fn []
-                     (run! #(.remove ^js %) @clones)
-                     (run! release-node! @nodes)
-                     (dom/unset-css-property! from-node "visibility")
-                     (when on-complete (on-complete)))]
+        (let [finished? (volatile! false)
+              done      (fn []
+                          (when-not @finished?
+                            (vreset! finished? true)
+                            (run! #(.remove ^js %) @clones)
+                            (run! release-node! @nodes)
+                            (dom/unset-css-property! from-node "visibility")
+                            (when on-complete (on-complete))))]
           (if (empty? @anims)
             (done)
-            (-> (js/Promise.all (into-array (map #(.-finished ^js %) @anims)))
-                (.then done done))))
+            (do
+              (-> (js/Promise.all (into-array (map #(.-finished ^js %) @anims)))
+                  (.then done done))
+              ;; Animations of a hidden page may never report their end
+              (js/setTimeout done (+ (:duration animation) 200)))))
 
         true))))

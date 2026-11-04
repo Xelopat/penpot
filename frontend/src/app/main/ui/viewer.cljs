@@ -138,25 +138,30 @@
          :frame frame
          :page page}])]))
 
+(defn- source-node
+  "Rendered trigger that opened an overlay."
+  [overlay]
+  (let [container (dom/get-element "viewer-base-viewport")
+        nodes     (dom/query-all container (dm/str "[id=\"shape-" (:source-id overlay) "\"]"))
+        n         (some-> nodes .-length)]
+    (when (and n (pos? n))
+      (aget nodes (dec n)))))
+
 (defn- forward-to-hover-source!
   "A hover overlay usually covers the element that opened it, so pointer
   events not handled by the overlay itself go to that element (a hover
   state then keeps the click interactions of the element)."
   [overlay event]
   (when-let [source-id (and (:hover-source? overlay) (:source-id overlay))]
-    (let [container (dom/get-element "viewer-base-viewport")
-          nodes     (dom/query-all container (dm/str "[id=\"shape-" source-id "\"]"))
-          n         (some-> nodes .-length)
-          native    (dom/event->browser-event event)
-          type      (.-type ^js native)]
-      (when (and n (pos? n))
-        (let [node (aget nodes (dec n))]
-          (js/setTimeout
-           #(.dispatchEvent ^js node (js/PointerEvent. type #js {:bubbles true
-                                                                 :cancelable true
-                                                                 :pointerId (.-pointerId ^js native)
-                                                                 :button (.-button ^js native)}))
-           0))))))
+    (let [native (dom/event->native-event event)
+          type   (.-type ^js native)]
+      (when-let [node (source-node {:source-id source-id})]
+        (js/setTimeout
+         #(.dispatchEvent ^js node (js/PointerEvent. type #js {:bubbles true
+                                                               :cancelable true
+                                                               :pointerId (.-pointerId ^js native)
+                                                               :button (.-button ^js native)}))
+         0)))))
 
 (mf/defc viewer-overlay
   [{:keys [overlay page frame zoom wrapper-size interactions-mode]}]
@@ -188,7 +193,20 @@
         (mf/use-fn
          (mf/deps overlay)
          (fn [event]
-           (forward-to-hover-source! overlay event)))]
+           (forward-to-hover-source! overlay event)))
+
+        ;; A "while hovering" overlay closes when the pointer leaves it,
+        ;; unless it goes back to the element that opened it
+        on-pointer-leave
+        (mf/use-fn
+         (mf/deps overlay)
+         (fn [event]
+           (when (and (:hover-close? overlay) (not (:replaced-by overlay)))
+             (let [related (.-relatedTarget ^js (dom/event->native-event event))
+                   source  (source-node overlay)]
+               (when-not (and (some? related) (some? source) (.contains ^js source related))
+                 (st/emit! (dv/close-overlay (:id overlay)
+                                             (some-> (:animation overlay) ctsi/invert-direction))))))))]
 
     [:*
      (when (or close-click-outside? background-overlay?)
@@ -213,6 +231,7 @@
                :id (dm/str "overlay-" (:id overlay-frame))
                :on-pointer-down on-pointer-event
                :on-pointer-up on-pointer-event
+               :on-pointer-leave on-pointer-leave
                :style {:width (:width size)
                        :height (:height size)
                        :position "fixed"}}
@@ -229,6 +248,7 @@
               :id (dm/str "overlay-" (:id overlay-frame))
               :on-pointer-down on-pointer-event
               :on-pointer-up on-pointer-event
+              :on-pointer-leave on-pointer-leave
               :style {:width (:width size)
                       :height (:height size)
                       :left (* (:x overlay-position) zoom)

@@ -144,7 +144,10 @@
                            :pos-type (:overlay-pos-type interaction)
                            :source-id (:id shape)
                            :hover-source? (contains? #{:mouse-over :mouse-enter}
-                                                     (:event-type interaction))}}))
+                                                     (:event-type interaction))
+                           ;; Opened while hovering: it closes itself when the
+                           ;; pointer leaves it for anything but its trigger
+                           :hover-close? (= :mouse-over (:event-type interaction))}}))
 
 (defn- swap-overlay-params
   "Overlays replaced by a `swap-overlay` interaction and where the new one
@@ -396,42 +399,30 @@
       (doseq [interaction interactions]
         (activate-interaction interaction shape base-frame frame-offset objects overlays)))))
 
-(defn- hover-overlay-node
-  "Rendered overlay opened by a hover interaction, when the pointer just
-  moved into it."
+(defn- into-hover-overlay?
+  "Check if the pointer left the trigger towards the overlay its hover
+  interaction opened (for example a hover state covering the trigger)."
   [event interaction]
   (when (contains? #{:open-overlay :toggle-overlay} (:action-type interaction))
-    (let [related (.-relatedTarget ^js (dom/event->browser-event event))
+    (let [related (.-relatedTarget ^js (dom/event->native-event event))
           node    (some->> (:destination interaction) (str "overlay-") dom/get-element)]
-      (when (and (some? related) (some? node) (.contains ^js node related))
-        node))))
+      (and (some? related) (some? node) (.contains ^js node related)))))
 
 (defn- on-pointer-leave
   [event shape base-frame frame-offset objects overlays]
   (let [interactions     (->> (:interactions shape)
                               (filter #(= (:event-type %) :mouse-leave)))
         interactions-inv (->> (:interactions shape)
-                              (filter #(= (:event-type %) :mouse-over)))
-        trigger-node     (dom/get-current-target event)]
+                              (filter #(= (:event-type %) :mouse-over)))]
     (when (or (seq interactions) (seq interactions-inv))
       (dom/stop-propagation event)
       (doseq [interaction interactions]
         (activate-interaction interaction shape base-frame frame-offset objects overlays))
       (doseq [interaction interactions-inv]
-        (let [deactivate #(deactivate-interaction interaction shape base-frame frame-offset objects overlays)]
-          (if-let [overlay-node (hover-overlay-node event interaction)]
-            ;; The pointer moved into the overlay this hover opened (for
-            ;; example a hover state that covers the trigger): keep it open
-            ;; until the pointer leaves both the overlay and the trigger.
-            (.addEventListener ^js overlay-node "pointerleave"
-                               (fn [^js leave-event]
-                                 (let [related (.-relatedTarget leave-event)]
-                                   (when-not (and (some? related)
-                                                  (some? trigger-node)
-                                                  (.contains ^js trigger-node related))
-                                     (deactivate))))
-                               #js {:once true})
-            (deactivate)))))))
+        ;; Moving into the overlay keeps it open; the overlay closes itself
+        ;; when the pointer leaves it (see `:hover-close?`)
+        (when-not (into-hover-overlay? event interaction)
+          (deactivate-interaction interaction shape base-frame frame-offset objects overlays))))))
 
 (defn- on-load
   [shape base-frame frame-offset objects overlays]
@@ -556,19 +547,19 @@
           ;; handling we need access to all objects inside the page.
 
           on-pointer-down
-          (mf/use-fn (mf/deps shape base-frame frame-offset all-objects)
+          (mf/use-fn (mf/deps shape base-frame frame-offset all-objects overlays)
                      #(on-pointer-down % shape base-frame frame-offset all-objects overlays))
 
           on-pointer-up
-          (mf/use-fn (mf/deps shape base-frame frame-offset all-objects)
+          (mf/use-fn (mf/deps shape base-frame frame-offset all-objects overlays)
                      #(on-pointer-up % shape base-frame frame-offset all-objects overlays))
 
           on-pointer-enter
-          (mf/use-fn (mf/deps shape base-frame frame-offset all-objects)
+          (mf/use-fn (mf/deps shape base-frame frame-offset all-objects overlays)
                      #(on-pointer-enter % shape base-frame frame-offset all-objects overlays))
 
           on-pointer-leave
-          (mf/use-fn (mf/deps shape base-frame frame-offset all-objects)
+          (mf/use-fn (mf/deps shape base-frame frame-offset all-objects overlays)
                      #(on-pointer-leave % shape base-frame frame-offset all-objects overlays))]
 
       (mf/with-effect []

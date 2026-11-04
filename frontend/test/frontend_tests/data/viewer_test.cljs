@@ -171,6 +171,20 @@
         (t/is (= [(:id tab-b)] (mapv :id (:viewer-overlays result))))
         (t/is (nil? (:viewer-animations result)))))
 
+    (t/testing "swapping back during a transition keeps the overlay"
+      (let [state  (-> (overlay-state [tab-a tab-b]
+                                      [(assoc open-a :replaced-by (:id tab-b))
+                                       {:id (:id tab-b) :frame tab-b :anchor :anchor}])
+                       (assoc :viewer-animations {(:id tab-b) {:kind :swap-overlay}}))
+            result (ptk/update (dv/swap-overlay [(:id tab-b)] (:id tab-a) (gpt/point 0 0)
+                                                [:top :left] false false dissolve false nil)
+                               state)
+            done   (ptk/update (dv/complete-animation) result)]
+        (t/is (= [(:id tab-a)] (mapv :id (:viewer-overlays result))))
+        (t/is (nil? (-> result :viewer-overlays first :replaced-by)))
+        (t/is (nil? (:viewer-animations result)))
+        (t/is (= [(:id tab-a)] (mapv :id (:viewer-overlays done))))))
+
     (t/testing "a toggle ignores overlays that are being replaced"
       (let [state  (overlay-state [tab-a] [(assoc open-a :replaced-by (:id tab-b))])
             result (ptk/update (dv/toggle-overlay (:id tab-a) (gpt/point 0 0) [:top :left]
