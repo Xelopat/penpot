@@ -229,6 +229,7 @@
                       :z-index 2}}
         [:div {:class (stl/css :viewer-overlay :viewport-container)
                :id (dm/str "overlay-" (:id overlay-frame))
+               :on-click on-pointer-event
                :on-pointer-down on-pointer-event
                :on-pointer-up on-pointer-event
                :on-pointer-leave on-pointer-leave
@@ -246,6 +247,7 @@
 
        [:div {:class (stl/css :viewer-overlay :viewport-container)
               :id (dm/str "overlay-" (:id overlay-frame))
+              :on-click on-pointer-event
               :on-pointer-down on-pointer-event
               :on-pointer-up on-pointer-event
               :on-pointer-leave on-pointer-leave

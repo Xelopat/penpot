@@ -90,6 +90,34 @@
           fallback
           {:x x1 :y y1 :width (- x2 x1) :height (- y2 y1)})))))
 
+(defn- anchor-rect
+  "Rect of the rendered anchor `id` in the coordinates overlays are placed
+  in: base frame units relative to the base viewport. Measuring the
+  rendered layer takes nested boards, the page scroll, scroll boxes and
+  open overlays into account. Anchors that stay fixed on screen are
+  measured as laid out without scroll, like the fixed overlays."
+  [id frame? anchor-overlay fixed?]
+  (let [container (dom/get-element "viewer-base-viewport")
+        section   (dom/get-element "viewer-section")
+        root      (or (some->> anchor-overlay :id (str "overlay-") dom/get-element)
+                      container)
+        nodes     (some-> root (dom/query-all (str "[id=\"shape-" id "\"]")))
+        n         (some-> nodes .-length)
+        node      (when (and n (pos? n)) (aget nodes (dec n)))
+        zoom      (get-in @st/state [:viewer-local :zoom] 1)]
+    (when (and (some? node) (some? container) (some? section))
+      (let [;; A board is measured by its own background, ignoring the
+            ;; children that overflow it
+            measure (or (when frame? (dom/query node ".frame-background")) node)
+            r       (dom/get-bounding-rect measure)
+            c       (dom/get-bounding-rect container)
+            left    (cond-> (:left c) fixed? (+ (.-scrollLeft ^js section)))
+            top     (cond-> (:top c) fixed? (+ (.-scrollTop ^js section)))]
+        {:x (/ (- (:left r) left) zoom)
+         :y (/ (- (:top r) top) zoom)
+         :width (/ (:width r) zoom)
+         :height (/ (:height r) zoom)}))))
+
 (defn- calc-overlay
   "Where and how to show the overlay of an `open-overlay`,
   `toggle-overlay` or `swap-overlay` interaction."
@@ -109,11 +137,32 @@
         overlays-ids           (set (map :id overlays))
         relative-to-base-frame (find-relative-to-base-frame relative-to-shape objects overlays-ids base-frame)
 
+        ;; A shape reference is measured where it is actually rendered
+        anchor                 (when (and (not viewport?) (not manual?)
+                                          (some? dest-frame)
+                                          (some? (get objects relative-to-id)))
+                                 (get objects relative-to-id))
+        anchor-overlay         (when anchor (find-overlay-of (:id anchor) objects overlays))
+        anchor-fixed?          (boolean (and anchor
+                                             (or (cfh/fixed? objects (:id anchor))
+                                                 (:fixed-source? anchor-overlay))))
+        anchor-bounds          (when anchor
+                                 (anchor-rect (:id anchor) (cfh/frame-shape? anchor)
+                                              anchor-overlay anchor-fixed?))
+
         [position snap-to]
-        (if (and viewport? (some? dest-frame))
+        (cond
+          (and viewport? (some? dest-frame))
           (ctsi/calc-overlay-viewport-position interaction
                                                (gsb/get-object-bounds objects dest-frame)
                                                (get-viewport-rect base-frame))
+
+          (some? anchor-bounds)
+          (ctsi/calc-overlay-viewport-position interaction
+                                               (gsb/get-object-bounds objects dest-frame)
+                                               anchor-bounds)
+
+          :else
           (ctsi/calc-overlay-position interaction
                                       shape
                                       objects
@@ -132,8 +181,10 @@
      :position            position
      :snap-to             snap-to
      :fixed?              (boolean (or viewport?
-                                       (cfh/fixed? objects relative-to-id)
-                                       inside-fixed-overlay?))
+                                       (if (some? anchor-bounds)
+                                         anchor-fixed?
+                                         (or (cfh/fixed? objects relative-to-id)
+                                             inside-fixed-overlay?))))
      :source-overlay      source-overlay
      :close-click-outside (:close-click-outside interaction)
      :background-overlay  (:background-overlay interaction)
@@ -239,6 +290,9 @@
               (when (and section container)
                 (let [srect (dom/get-bounding-rect section)
                       crect (dom/get-bounding-rect container)]
+                  ;; Jumping to another part of the page leaves the open
+                  ;; overlays behind, as navigating does
+                  (st/emit! (dv/close-all-overlays))
                   (vsc/animate-scroll! section
                                        (+ (.-scrollLeft ^js section) (- (:left crect) (:left srect)) dx)
                                        (+ (.-scrollTop ^js section) (- (:top crect) (:top srect)) dy)
@@ -370,11 +424,21 @@
                                    opts))))
     nil))
 
+(defn- on-click
+  "Click interactions run on a full click, like in the browser: a swipe or
+  a drag that scrolls does not trigger them."
+  [event shape base-frame frame-offset objects overlays]
+  (let [interactions (->> (:interactions shape)
+                          (filter #(= (:event-type %) :click)))]
+    (when (seq interactions)
+      (dom/stop-propagation event)
+      (doseq [interaction interactions]
+        (activate-interaction interaction shape base-frame frame-offset objects overlays)))))
+
 (defn- on-pointer-down
   [event shape base-frame frame-offset objects overlays]
   (let [interactions (->> (:interactions shape)
-                          (filter #(or (= (:event-type %) :click)
-                                       (= (:event-type %) :mouse-press))))]
+                          (filter #(= (:event-type %) :mouse-press)))]
     (when (seq interactions)
       (dom/stop-propagation event)
       (doseq [interaction interactions]
@@ -467,6 +531,8 @@
         interactions (:interactions shape)
         {:keys [x y width height]} (:selrect shape)
 
+        on-ck (mf/use-fn (mf/deps shape base-frame frame-offset all-objects overlays)
+                         #(on-click % shape base-frame frame-offset all-objects overlays))
         on-pd (mf/use-fn (mf/deps shape base-frame frame-offset all-objects overlays)
                          #(on-pointer-down % shape base-frame frame-offset all-objects overlays))
         on-pu (mf/use-fn (mf/deps shape base-frame frame-offset all-objects overlays)
@@ -481,6 +547,7 @@
         (partial run! tm/dispose! sems)))
 
     [:g {:style {:cursor (when (ctsi/actionable? interactions) "pointer")}
+         :on-click on-ck
          :on-pointer-down on-pd
          :on-pointer-up on-pu
          :on-pointer-enter on-pe
@@ -546,6 +613,10 @@
           ;; all-objects in some cases (e.g. if there are fixed elements). But for interactions
           ;; handling we need access to all objects inside the page.
 
+          on-click
+          (mf/use-fn (mf/deps shape base-frame frame-offset all-objects overlays)
+                     #(on-click % shape base-frame frame-offset all-objects overlays))
+
           on-pointer-down
           (mf/use-fn (mf/deps shape base-frame frame-offset all-objects overlays)
                      #(on-pointer-down % shape base-frame frame-offset all-objects overlays))
@@ -569,6 +640,7 @@
       (if-not svg-element?
         [:> shape-container {:shape shape
                              :cursor (when (ctsi/actionable? interactions) "pointer")
+                             :on-click on-click
                              :on-pointer-down on-pointer-down
                              :on-pointer-up on-pointer-up
                              :on-pointer-enter on-pointer-enter

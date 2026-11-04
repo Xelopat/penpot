@@ -89,6 +89,7 @@
   [{:keys [board objects all-objects scale]}]
   (let [node-ref    (mf/use-ref nil)
         drag-ref    (mf/use-ref nil)
+        snap-ref    (mf/use-ref nil)
 
         {:keys [x y width height]} (:selrect board)
         overflow    (:scroll-overflow board)
@@ -142,35 +143,35 @@
                  (when horizontal? (set! (.-scrollLeft ^js node) (- (:left drag) dx)))
                  (when vertical? (set! (.-scrollTop ^js node) (- (:top drag) dy))))))))
 
+        snap-later
+        (mf/use-fn
+         (fn []
+           (when-let [snap (mf/ref-val snap-ref)]
+             (snap))))
+
         on-pointer-up
         (mf/use-fn
+         (mf/deps snap-later)
          (fn [_]
-           (mf/set-ref-val! drag-ref nil)))]
+           (let [drag (mf/ref-val drag-ref)
+                 node (mf/ref-val node-ref)]
+             (mf/set-ref-val! drag-ref nil)
+             ;; A drag that scrolled is not a click on the layer below
+             (when (:moved drag)
+               (.addEventListener ^js node "click"
+                                  (fn [^js e]
+                                    (.stopPropagation e)
+                                    (.preventDefault e))
+                                  #js {:capture true :once true})
+               (js/setTimeout snap-later 0)))))]
 
-    ;; A vertical wheel scrolls a horizontal box while it can move
-    (mf/with-effect [horizontal? vertical?]
-      (when (and horizontal? (not vertical?))
-        (let [node     (mf/ref-val node-ref)
-              on-wheel (fn [event]
-                         (let [e    (.getBrowserEvent ^js event)
-                               dy   (.-deltaY e)
-                               left (.-scrollLeft ^js node)
-                               end  (- (.-scrollWidth ^js node) (.-clientWidth ^js node))]
-                           (when (and (not (.-ctrlKey e))
-                                      (not (.-metaKey e))
-                                      (> (abs dy) (abs (.-deltaX e)))
-                                      (or (and (pos? dy) (< left end))
-                                          (and (neg? dy) (pos? left))))
-                             (.preventDefault e)
-                             (set! (.-scrollLeft ^js node) (+ left dy)))))
-              key      (events/listen node "wheel" on-wheel #js {:passive false})]
-          #(events/unlistenByKey key))))
-
-    ;; Snap to the nearest child once the scroll stops
+    ;; Snap to the nearest child once the scroll stops: on `scrollend`
+    ;; (after the finger is lifted and the inertia ends) where available
     (mf/with-effect [snap? points scale horizontal? vertical?]
       (when snap?
         (let [node   (mf/ref-val node-ref)
               timer  (volatile! nil)
+              ended? (some? (.-onscrollend ^js js/window))
               snap   (fn []
                        (when-not (or (vsc/scrolling? node)
                                      (:moved (mf/ref-val drag-ref)))
@@ -189,9 +190,15 @@
               on-scroll (fn [_]
                           (some-> @timer js/clearTimeout)
                           (vreset! timer (js/setTimeout snap snap-delay)))
-              key    (events/listen node "scroll" on-scroll)]
+              key    (if ended?
+                       (events/listen node "scrollend" snap)
+                       (events/listen node "scroll" on-scroll))]
+          ;; Mouse drags set the scroll directly and end without inertia,
+          ;; so the pointer up snaps through this ref
+          (mf/set-ref-val! snap-ref snap)
           (fn []
             (events/unlistenByKey key)
+            (mf/set-ref-val! snap-ref nil)
             (some-> @timer js/clearTimeout)))))
 
     [:div {:ref node-ref

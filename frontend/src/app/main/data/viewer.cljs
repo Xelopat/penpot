@@ -873,6 +873,22 @@
               (cond-> (nil? animation)
                 (remove-replaced-overlays))))))))
 
+(defn close-all-overlays
+  "Close every open overlay, as navigating to another part of the
+  prototype does."
+  []
+  (ptk/reify ::close-all-overlays
+    ptk/UpdateEvent
+    (update [_ state]
+      (-> state
+          (assoc :viewer-overlays [])
+          (update :viewer-animations
+                  (fn [animations]
+                    (not-empty
+                     (into {}
+                           (filter (fn [[_ animation]] (= :go-to-frame (:kind animation))))
+                           animations))))))))
+
 (defn close-overlay
   ([frame-id] (close-overlay frame-id nil))
   ([frame-id animation]
