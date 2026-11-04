@@ -412,18 +412,22 @@ The viewer behaves as follows; follow these rules, otherwise links "jump" to oth
   * Destinations must be top-level boards on the SAME page. The viewer cannot navigate to boards on other pages,
     so keep every screen of one flow on one page.
   * `navigate-to` replaces the whole screen. Use it only for real page changes (home → catalog), never for tabs,
-    accordions, steppers or selections inside a section (use `swap-overlay`, below).
+    accordions, chips, steppers, hover states or selections inside a section: those are variants of a component
+    switched with `change-to` (below). NEVER create one top-level board per state.
   * Menu links to a section of the SAME long page use `scroll-to` (below), not `navigate-to`.
   * When the destination is another state of the same page, pass `preserveScrollPosition: true`.
+  * The viewer lists as screens only the top-level boards that are navigated to or start a flow. Boards only opened as
+    overlays, sets of variants and main components are not listed (overlays keep opening normally).
+  * Click interactions run on a full click (press and release), so swipes and drags in scroll boxes do not trigger them.
 
-**Animations** (the `animation` field of `navigate-to`, `open-overlay`, `toggle-overlay`, `swap-overlay`, `close-overlay`, `scroll-to`)
+**Animations** (the `animation` field of `navigate-to`, `open-overlay`, `toggle-overlay`, `swap-overlay`, `close-overlay`, `scroll-to`, `change-to`)
   * Omitted `animation` = a default dissolve of 250 ms `ease-out` (150 ms for hover triggers; scroll-to: 400 ms smooth scroll).
     Pass `animation: null` only when an instant change is really wanted.
   * `dissolve`: `{ type, duration, easing }`
   * `slide`: `{ type, way: "in" | "out", direction: "right" | "left" | "up" | "down", duration, easing, offsetEffect }` (`offsetEffect` only affects `navigate-to`)
   * `push`: `{ type, direction, duration, easing }`; valid ONLY for `navigate-to`. The plugin API still stores push on
     overlay actions, but the editor treats that combination as invalid, so never use it there.
-  * `smart-animate`: `{ type, duration, easing }`; valid ONLY for `navigate-to`, `swap-overlay` and `scroll-to`.
+  * `smart-animate`: `{ type, duration, easing }`; valid ONLY for `navigate-to`, `swap-overlay`, `change-to` and `scroll-to`.
     Layers with the same name path (names of the layer and its parents inside the board, e.g. "Card/Title") in both
     states move and resize from the old geometry to the new one; layers that also look different (fill, text, opacity…)
     cross-fade; layers present in only one state fade in/out. Give corresponding layers identical, unique names.
@@ -435,15 +439,40 @@ The viewer behaves as follows; follow these rules, otherwise links "jump" to oth
   * `relativeTo` decides what positions ("center", "top-left", "bottom-center", ...) are measured against:
     - omitted or `"viewport"`: the visible area of the screen. The overlay stays on screen while the page below scrolls.
       This is the right choice for modals, dialogs, drawers, bottom sheets, cookie bars and toasts.
-    - a shape: positioned against that shape (anchors for in-place states, dropdowns under a button).
+    - a shape: positioned against where that shape is rendered (nested boards, page scroll, a fixed header and a
+      reference inside an open overlay are taken into account). If the shape stays fixed on screen (inside a
+      `fixedWhenScrolling` layer or a modal), the overlay stays fixed too; otherwise it scrolls with the page.
     - `null`: the whole base board. On a long page "center" is then the middle of the PAGE (e.g. y=5000): avoid it.
+  * Positions place the overlay INSIDE the reference's box: "top-left" puts the overlay's top-left corner on the
+    reference's top-left corner, "bottom-left" aligns their bottom-left corners (the overlay does not hang below).
+    For a dropdown under a field, put a transparent anchor (`fills = []`) right below the field, as wide as the
+    dropdown, and use `relativeTo: anchor`, `position: "top-left"`.
   * Modals: `position: "center"` (no `relativeTo`), `addBackgroundOverlay: true`, `closeWhenClickOutside: true`
     and an entry animation such as `{ type: "slide", way: "in", direction: "up", duration: 300, easing: "ease-out" }`.
   * `position: "manual"` is measured from the trigger itself (or from the trigger's parent board if the trigger is a board).
     Avoid it unless an offset from the trigger is really needed; anchors (below) are more predictable.
 
-**In-place state changes: tabs, accordions, steppers, carousels** (they must not navigate and must not stack)
-  * Build each state as a top-level board with exactly the size of the area it replaces.
+**Interactive components: tabs, chips, toggles, accordions, steps, hover states** (preferred, like Figma)
+  * Make the element a component with variants (e.g. property "State": Default / Selected / Hover), using
+    `penpotUtils.createVariantContainer(...)`, and place copies of it on the screens. Give the layers inside every
+    variant the same names ("Label", "Icon", "Indicator") so smart animate can match them.
+  * Wire the interactions ON THE VARIANT MAINS (`variant.mainInstance().addInteraction(...)`), not on the copies:
+    in View mode every copy without interactions of its own uses those of its current variant, and a copy keeps its
+    overrides (its own label, image, color) when it switches.
+    - Chip/toggle: Default → `{ type: "change-to", variant: selectedVariant }`, Selected → `change-to` Default.
+    - Hover state: on Default, trigger "mouse-over" → `{ type: "change-to", variant: hoverVariant }`; the copy goes
+      back by itself when the pointer leaves (no "mouse-leave" interaction needed).
+    - Tabs: a component "Tabs" whose variants are "Tab 1 active", "Tab 2 active", ...; each tab layer inside a variant
+      has `change-to` the variant where it is active. The content area can be part of the variants too.
+    - Accordion item: variants Closed / Open (taller); the header toggles with `change-to`.
+  * `variant` is a `LibraryComponent` of the same set (from `container.variants.variantComponents()`) or its id;
+    `animation` defaults to smart animate (250 ms, 150 ms for hover); only `dissolve` and `smart-animate` are allowed.
+  * Limits: the copy changes in place, sizes of surrounding layouts are not recomputed in View mode, so keep variants
+    of an element in a flex layout the same size, or reserve the space of the largest one.
+
+**In-place states larger than a component: wizard steps in a modal, a configurator area**
+  * Prefer variants (above). When a region is too large for a component, build each state as a top-level board with
+    exactly the size of the area it replaces.
   * In the base board, place a transparent anchor (`fills = []`, sent to the back) exactly where the state should appear.
   * Every tab/step button: `swap-overlay` to its state board with `relativeTo: anchor`, `position: "top-left"`,
     `addBackgroundOverlay: false`, `closeWhenClickOutside: false`. `swap-overlay` replaces the overlay already shown at
@@ -463,6 +492,7 @@ The viewer behaves as follows; follow these rules, otherwise links "jump" to oth
   * `destination` can be any layer; when it is on another board, the viewer navigates there and scrolls to it.
     Using the board itself as destination scrolls back to the top ("back to top" buttons).
   * Default animation is a 400 ms smooth scroll; set `{ type: "smart-animate", duration, easing }` to tune it or `null` to jump.
+  * A page `scroll-to` closes the open overlays (dropdowns, modals), as navigating does.
 
 **Scrolling inside a block: carousels, card strips, scrollable panels**
   * Make the block a nested board with `clipContent = true` and its full content inside (wider or taller than the board),
@@ -479,7 +509,8 @@ The viewer behaves as follows; follow these rules, otherwise links "jump" to oth
 
 **Hover and timed effects**
   * Triggers: "click", "mouse-press" (while pressed), "mouse-over" (while hovering), "mouse-enter", "mouse-leave", "after-delay" (boards only).
-  * "mouse-over" + `open-overlay` is the hover state: it opens on pointer-enter and closes when the pointer leaves BOTH the
+  * Hover states of components: "mouse-over" + `change-to` (see Interactive components); no overlay needed.
+  * "mouse-over" + `open-overlay` is a hover overlay: it opens on pointer-enter and closes when the pointer leaves BOTH the
     trigger and the overlay it opened, so a hover-state board that covers the element does not flicker.
     Place it with `relativeTo:` the element, `position: "top-left"`, `addBackgroundOverlay: false`. Clicks on the
     hover board that it does not handle itself are passed to the element below, so the element's click interactions
@@ -491,8 +522,8 @@ The viewer behaves as follows; follow these rules, otherwise links "jump" to oth
   * `penpot.generateStyle` returns static styles only. When turning a prototype into code, also read each element's
     `interactions` and translate them with `penpotUtils.interactionsToCss(shape)`, which returns `{ css, items }`:
     dissolve/slide/push as `@keyframes` + `animation`, `after-delay` as `animation-delay`, hover overlays as `:hover`
-    transitions, smart animate as transitions of the properties that change between same-named layers (state switched
-    by an `.is-<state>` class), scroll-to as an anchor with `scroll-margin-top`. Each item has a `note` saying which
+    transitions, smart animate and `change-to` as transitions of the properties that change between same-named layers
+    (state switched by an `.is-<state>` class, hover variants as `:hover`), scroll-to as an anchor with `scroll-margin-top`. Each item has a `note` saying which
     class or JavaScript the CSS expects. Selectors come from layer names: give layers meaningful names first.
   * Motion tokens: keep durations as tokens so code and prototype agree. Penpot has no duration or text token type,
     so the convention is `number` tokens named `motion.duration.<name>` in milliseconds (e.g. `motion.duration.fast = 150`,

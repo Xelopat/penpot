@@ -15,6 +15,7 @@ export interface AuditAction {
     readonly type: string;
     readonly destination?: AuditShape | null;
     readonly relativeTo?: AuditShape | "viewport" | null;
+    readonly variant?: string | null;
 }
 
 const OVERLAY_ACTIONS = ["open-overlay", "toggle-overlay", "swap-overlay"];
@@ -185,6 +186,14 @@ export class PrototypeAudit {
                 const navigate = action.type === "navigate-to";
                 const destinationId = action.destination?.id;
                 const destination = destinationId ? shapes.get(destinationId) : undefined;
+                if (action.type === "change-to" && !action.variant) {
+                    add({
+                        severity: "error",
+                        code: "variant-missing",
+                        shape: source,
+                        message: "The change-to interaction has no variant to switch to.",
+                    });
+                }
                 if (action.type === "scroll-to" && !destination) {
                     add({
                         severity: "error",

@@ -47,7 +47,11 @@ export interface CssInteraction {
         readonly position?: string;
         readonly scrollOffset?: { x: number; y: number } | null;
         readonly animation?: CssAnimation | null;
+        /** change-to: id of the target variant (resolved by the caller into `destination`) */
+        readonly variant?: string | null;
     };
+    /** change-to: the component copy that switches (the trigger or one of its parents) */
+    readonly copy?: CssShape | null;
 }
 
 export interface InteractionCss {
@@ -186,6 +190,46 @@ export function rootBoard(shape: CssShape): CssShape {
     return current;
 }
 
+/**
+ * CSS that turns the copy `from` into the variant `to`: the root and the
+ * same-named layers transition the properties that change. `state` is the
+ * selector suffix of the new state (`:hover` or `.is-<variant>`).
+ */
+function variantCss(from: CssShape, to: CssShape, animation: CssAnimation | null, state: string): string {
+    const rootSelector = cssClass(from);
+    const blocks: string[] = [];
+    const add = (selector: string, stateSelector: string, diff: Record<string, string>) => {
+        const props = Object.keys(diff);
+        if (!props.length) return;
+        if (animation)
+            blocks.push(rule(selector, [`transition: ${props.map((p) => `${p} ${timing(animation)}`).join(", ")}`]));
+        blocks.push(
+            rule(
+                stateSelector,
+                Object.entries(diff).map(([k, v]) => `${k}: ${v}`)
+            )
+        );
+    };
+    const rootDiff = layerDiff(from, to, from, to);
+    delete rootDiff.transform;
+    add(rootSelector, `${rootSelector}${state}`, rootDiff);
+    const fromPaths = namePaths(from);
+    for (const [path, toLayer] of namePaths(to)) {
+        const fromLayer = fromPaths.get(path);
+        if (!fromLayer) continue;
+        const selector = path
+            .split("/")
+            .map((name) => cssClass({ name, id: toLayer.id }))
+            .join(" ");
+        add(
+            `${rootSelector} ${selector}`,
+            `${rootSelector}${state} ${selector}`,
+            layerDiff(fromLayer, toLayer, from, to)
+        );
+    }
+    return blocks.join("\n\n");
+}
+
 function smartAnimateCss(from: CssShape, to: CssShape, animation: CssAnimation): { css: string; layers: number } {
     const fromPaths = namePaths(from);
     const toPaths = namePaths(to);
@@ -249,6 +293,27 @@ export function interactionsToCss(shape: CssShape): InteractionsCssResult {
                 ),
             ].join("\n\n");
             push(css, `Hover state "${destination.name}" written as :hover on the element.`);
+            return;
+        }
+
+        if (action.type === "change-to") {
+            const copy = interaction.copy ?? shape;
+            if (!destination) {
+                push("", "Variant not found: nothing to translate.");
+                return;
+            }
+            if (HOVER_TRIGGERS.includes(interaction.trigger)) {
+                push(
+                    variantCss(copy, destination, animation, ":hover"),
+                    `Hover variant "${destination.name}" written as :hover on the component.`
+                );
+            } else {
+                const state = `.is-${cssClass(destination).slice(1)}`;
+                push(
+                    variantCss(copy, destination, animation, state),
+                    `Toggle the class "${state.slice(1)}" on the component to switch to "${destination.name}".`
+                );
+            }
             return;
         }
 

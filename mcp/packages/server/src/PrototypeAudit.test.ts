@@ -264,3 +264,15 @@ test("scroll destinations can be any layer but must exist", () => {
     assert.equal(result.summary.errors, 1);
     assert.equal(result.issues[0].code, "destination-missing");
 });
+
+test("variant switches need a variant", () => {
+    const f = fixture();
+    f.trigger.interactions = [
+        { action: { type: "change-to", variant: "8f0a6a2e-0000-4000-8000-000000000001" } },
+        { action: { type: "change-to", variant: null } },
+    ];
+    const result = PrototypeAudit.run(f.context);
+    assert.equal(result.summary.errors, 1);
+    assert.equal(result.issues[0].code, "variant-missing");
+    assert.equal(result.summary.actions["change-to"], 2);
+});

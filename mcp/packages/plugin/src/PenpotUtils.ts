@@ -216,7 +216,24 @@ export class PenpotUtils {
      * @param shape - The shape whose `interactions` are translated
      */
     public static interactionsToCss(shape: Shape): InteractionsCssResult {
-        return interactionsToCss(shape as unknown as CssShape);
+        // change-to refers to a variant by id: resolve it to its main and
+        // find the component copy that switches
+        const components = penpot.library.local.components;
+        const interactions = (shape.interactions ?? []).map((interaction: any) => {
+            if (interaction.action?.type !== "change-to") return interaction;
+            const component = components.find((c: any) => c.id === interaction.action.variant);
+            let copy: any = shape;
+            while (copy && !(copy.isComponentRoot?.() ?? false) && copy.parent) copy = copy.parent;
+            return {
+                trigger: interaction.trigger,
+                delay: interaction.delay,
+                copy: copy ?? shape,
+                action: { ...interaction.action, destination: component?.mainInstance?.() ?? null },
+            };
+        });
+        // Keep the proxy (geometry, parents, children) and only replace its interactions
+        const view = Object.assign(Object.create(shape), { interactions });
+        return interactionsToCss(view as unknown as CssShape);
     }
 
     /**

@@ -187,3 +187,39 @@ test("motion tokens become CSS custom properties", () => {
     assert.equal(css, ":root {\n  --motion-duration-fast: 150ms;\n  --motion-duration-slow: 400ms;\n}");
     assert.equal(motionTokensToCss([]), "");
 });
+
+test("change-to becomes a state class or :hover between variants", () => {
+    const page = root();
+    const chip = shape("Chip", { fills: [{ fillColor: "#DDDDDD" }] }, page);
+    shape("Dot", { x: 8, width: 16 }, chip);
+    const selected = shape("Chip Selected", { x: 2000, fills: [{ fillColor: "#2255FF" }] }, page);
+    shape("Dot", { x: 2176, width: 16 }, selected);
+    chip.interactions = [
+        {
+            trigger: "click",
+            action: {
+                type: "change-to",
+                variant: "id",
+                destination: selected,
+                animation: { type: "smart-animate", duration: 250, easing: "ease-out" },
+            },
+        },
+        {
+            trigger: "mouse-over",
+            action: {
+                type: "change-to",
+                variant: "id",
+                destination: selected,
+                animation: { type: "dissolve", duration: 150, easing: "ease-out" },
+            },
+        },
+        { trigger: "click", action: { type: "change-to", variant: "missing", destination: null } },
+    ];
+    const { items } = interactionsToCss(chip);
+    assert.match(items[0].css, /\.chip \{\n  transition: background-color 250ms ease-out;/);
+    assert.match(items[0].css, /\.chip\.is-chip-selected \{\n  background-color: #2255FF;/);
+    assert.match(items[0].css, /\.chip\.is-chip-selected \.dot \{\n  transform: translate\(168px, 0px\);/);
+    assert.match(items[0].note, /is-chip-selected/);
+    assert.match(items[1].css, /\.chip:hover \{\n  background-color: #2255FF;/);
+    assert.equal(items[2].css, "");
+});

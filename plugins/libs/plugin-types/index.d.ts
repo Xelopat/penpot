@@ -152,6 +152,7 @@ export type Action =
   | SwapOverlay
   | CloseOverlay
   | ScrollTo
+  | ChangeTo
   | PreviousScreen
   | OpenUrl;
 
@@ -487,6 +488,40 @@ export type Bounds = {
    */
   readonly height: number;
 };
+
+/**
+ * Switches the component copy that holds the trigger to another variant of
+ * its set, in place, like "Change to" in other design tools: no new screen
+ * or overlay is opened. The copy keeps its overrides (texts, colors), and
+ * the transition can be a dissolve or a smart animate between the variants
+ * (layers with the same names move and change). With the `mouse-over`
+ * trigger the copy goes back to its variant when the pointer leaves it.
+ *
+ * Define the interactions on the variants of the main component: every
+ * copy without interactions of its own uses those of its variant, so a
+ * copy switched to "Selected" uses the interactions of "Selected".
+ */
+export interface ChangeTo {
+  /**
+   * The action type
+   */
+  readonly type: 'change-to';
+
+  /**
+   * The variant to switch to: a `LibraryComponent` of the same set of
+   * variants (e.g. from `variants.variantComponents()`) or its id. Read
+   * back as the id of the component.
+   */
+  readonly variant: LibraryComponent | string;
+
+  /**
+   * Transition between the variants. When omitted, a smart animate of
+   * 250 ms (150 ms for hover triggers) with `ease-out` easing is used;
+   * pass `null` for an instant change. Only `dissolve` and
+   * `smart-animate` are allowed.
+   */
+  readonly animation?: Dissolve | SmartAnimate | null;
+}
 
 /**
  * This action will close a targeted board that is opened as an overlay.
