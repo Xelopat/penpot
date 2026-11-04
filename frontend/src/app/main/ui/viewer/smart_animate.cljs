@@ -125,7 +125,9 @@
   (let [svg   (root-svg root-node)
         rect  (dom/get-bounding-rect svg)
         width (some-> svg .-viewBox .-baseVal .-width)
-        bg    (dom/query root-node ".frame-background")
+        ;; Boards are placed by their background; other layers (groups of
+        ;; a variant) by the box of their content
+        bg    (or (dom/query root-node ".frame-background") root-node)
         bbox  (some-> ^js bg .getBBox)]
     {:x (:left rect)
      :y (:top rect)

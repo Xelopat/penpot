@@ -8133,6 +8133,18 @@ msgid "workspace.options.interaction-toggle-overlay-dest"
 msgstr "Toggle overlay: %s"
 
 #: src/app/main/ui/workspace/sidebar/options/menus/interactions.cljs
+msgid "workspace.options.interaction-change-to"
+msgstr "Change to"
+
+#: src/app/main/ui/workspace/sidebar/options/menus/interactions.cljs
+msgid "workspace.options.interaction-change-to-dest"
+msgstr "Change to: %s"
+
+#: src/app/main/ui/workspace/sidebar/options/menus/interactions.cljs
+msgid "workspace.options.interaction-variant"
+msgstr "Variant"
+
+#: src/app/main/ui/workspace/sidebar/options/menus/interactions.cljs
 msgid "workspace.options.scroll-behavior"
 msgstr "Scroll behavior"
 

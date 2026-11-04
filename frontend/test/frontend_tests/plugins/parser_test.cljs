@@ -310,3 +310,27 @@
     (t/is (= anchor (:position-relative-to result)))
     (t/is (= :top-left (:overlay-pos-type result)))
     (t/is (valid-interaction? result))))
+
+(t/deftest test-parse-change-to
+  (let [component-id (uuid/next)]
+    (t/testing "a library component as variant"
+      (let [result (parser/parse-interaction
+                    "click"
+                    #js {:type "change-to" :variant #js {"$id" component-id}}
+                    nil)]
+        (t/is (= :change-to (:action-type result)))
+        (t/is (= component-id (:component-id result)))
+        (t/is (= {:animation-type :smart-animate :duration 250 :easing :ease-out}
+                 (:animation result)))
+        (t/is (valid-interaction? result))))
+
+    (t/testing "a variant id and a hover trigger"
+      (let [result (parser/parse-interaction
+                    "mouse-over"
+                    #js {:type "change-to"
+                         :variant (str component-id)
+                         :animation #js {:type "dissolve" :duration 120}}
+                    nil)]
+        (t/is (= component-id (:component-id result)))
+        (t/is (= :dissolve (-> result :animation :animation-type)))
+        (t/is (valid-interaction? result))))))

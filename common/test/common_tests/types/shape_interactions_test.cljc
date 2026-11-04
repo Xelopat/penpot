@@ -1267,3 +1267,35 @@
 
     (t/testing "unknown directions are rejected"
       (t/is (not (cts/valid-shape? (assoc frame :scroll-overflow :diagonal)))))))
+
+(t/deftest change-to
+  (let [component-id (uuid/next)
+        interaction  (-> ctsi/default-interaction
+                         (ctsi/set-action-type :change-to)
+                         (ctsi/set-component-id component-id))]
+
+    (t/testing "a variant switch keeps its target component"
+      (t/is (ctsi/check-interaction interaction))
+      (t/is (= component-id (:component-id interaction)))
+      (t/is (ctsi/has-component? interaction))
+      (t/is (not (ctsi/has-destination interaction)))
+      (t/is (not (ctsi/has-overlay-opts interaction)))
+      (t/is (ctsi/has-animation? interaction)))
+
+    (t/testing "it is not a flow origin and survives remapping"
+      (t/is (not (ctsi/flow-origin? [interaction])))
+      (t/is (= [interaction] (ctsi/remap-interactions [interaction] {} {}))))
+
+    (t/testing "allowed animations"
+      (t/is (ctsi/allowed-animation? :change-to :dissolve))
+      (t/is (ctsi/allowed-animation? :change-to :smart-animate))
+      (t/is (not (ctsi/allowed-animation? :change-to :slide)))
+      (t/is (not (ctsi/allowed-animation? :change-to :push))))
+
+    (t/testing "default animation"
+      (t/is (= {:animation-type :smart-animate :duration 250 :easing :ease-out}
+               (ctsi/default-animation :change-to :click)))
+      (t/is (= 150 (:duration (ctsi/default-animation :change-to :mouse-over)))))
+
+    (t/testing "component id is only valid for change-to"
+      (t/is (ex/exception? (ex/try! (ctsi/set-component-id ctsi/default-interaction component-id)))))))

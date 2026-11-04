@@ -492,6 +492,12 @@
 ;;  animation: Animation;
 ;;}
 ;;
+;;export interface ChangeTo {
+;;  type: 'change-to';
+;;  variant: LibraryComponent | string;
+;;  animation?: Dissolve | SmartAnimate | null;
+;;}
+;;
 ;;export interface ScrollTo {
 ;;  type: 'scroll-to';
 ;;  destination: Shape;
@@ -543,6 +549,14 @@
 ;;  type: 'open-url';
 ;;  url: string;
 ;;}
+(defn- parse-variant
+  "A variant given as a library component or as its id."
+  [variant]
+  (cond
+    (string? variant) (uuid/parse* variant)
+    (some? variant)   (let [id (or (obj/get variant "$id") (obj/get variant "id"))]
+                        (if (uuid? id) id (some-> id str uuid/parse*)))))
+
 (defn parse-action
   [action]
   (when action
@@ -577,6 +591,11 @@
          {:action-type action-type
           :destination (-> (obj/get action "destination") (obj/get "$id"))
           :scroll-offset (-> (obj/get action "scrollOffset") parse-point)
+          :animation (parse-animation-option action)}
+
+         :change-to
+         {:action-type action-type
+          :component-id (parse-variant (obj/get action "variant"))
           :animation (parse-animation-option action)}
 
          :previous-screen

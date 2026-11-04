@@ -33,6 +33,10 @@
     :scroll-offset (gpt/point 0 -80)
     :animation {:animation-type :smart-animate :duration 400 :easing :ease-in-out}}
    {:event-type :mouse-over
+    :action-type :change-to
+    :component-id target
+    :animation {:animation-type :smart-animate :duration 150 :easing :ease-out}}
+   {:event-type :mouse-over
     :action-type :navigate
     :destination target
     :animation {:animation-type :smart-animate :duration 300 :easing :ease-out}}])

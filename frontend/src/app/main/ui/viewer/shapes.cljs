@@ -12,6 +12,7 @@
    [app.common.geom.point :as gpt]
    [app.common.geom.shapes :as gsh]
    [app.common.geom.shapes.bounds :as gsb]
+   [app.common.types.file :as ctf]
    [app.common.types.shape :as cts]
    [app.common.types.shape.interactions :as ctsi]
    [app.common.uuid :as uuid]
@@ -30,6 +31,7 @@
    [app.main.ui.shapes.svg-raw :as svg-raw]
    [app.main.ui.shapes.text :as text]
    [app.main.ui.viewer.scroll :as vsc]
+   [app.main.ui.viewer.variant-transition :as vvt]
    [app.util.dom :as dom]
    [app.util.object :as obj]
    [app.util.timers :as tm]
@@ -305,6 +307,46 @@
                                            :duration (:duration animation)
                                            :easing (:easing animation)}))))))))))
 
+;; Copies switched by a "while hovering" change-to, by their new id, with
+;; the variant to go back to when the pointer leaves them
+(defonce ^:private hover-variants (atom {}))
+
+(defn- page-objects
+  [state]
+  (let [page-id (some-> (get-in state [:route :query-params :page-id]) uuid/parse)]
+    (get-in state [:viewer :file :data :pages-index page-id :objects])))
+
+(defn- change-variant!
+  "Switch the component copy holding `shape-id` to the variant
+  `component-id`, in place, keeping its overrides. With `revert?` the copy
+  goes back to its current variant when the pointer leaves it."
+  [component-id animation shape-id revert?]
+  (let [state     @st/state
+        page-id   (some-> (get-in state [:route :query-params :page-id]) uuid/parse)
+        file      (get-in state [:viewer :file])
+        libraries (get-in state [:viewer :libraries])
+        objects   (page-objects state)
+        head      (when (and (some? component-id) (some? objects))
+                    (dv/variant-copy-of file libraries objects shape-id component-id))
+        swap      (when head
+                    (dv/variant-swap file libraries page-id (:id head) component-id))]
+    (when swap
+      (let [layer    (vvt/snapshot! (:id head))
+            original (:id (ctf/resolve-component head file libraries))]
+        (swap! hover-variants dissoc (:id head))
+        (when revert?
+          (swap! hover-variants assoc (:new-id swap)
+                 {:component-id original :animation animation}))
+        (st/emit! (dv/apply-variant-swap (:changes swap)))
+        (vvt/animate! {:layer layer
+                       :old-id (:id head)
+                       :new-id (:new-id swap)
+                       ;; Page objects may be an objects-map: build a plain map
+                       :get-objects #(-> {}
+                                         (into (seq objects))
+                                         (into (seq (page-objects @st/state))))
+                       :animation animation})))))
+
 (defn- activate-interaction
   [interaction shape base-frame frame-offset objects overlays]
   (case (:action-type interaction)
@@ -371,6 +413,12 @@
 
     :scroll-to
     (scroll-to! interaction)
+
+    :change-to
+    (change-variant! (:component-id interaction)
+                     (:animation interaction)
+                     (:id shape)
+                     (= :mouse-over (:event-type interaction)))
 
     :prev-screen
     (st/emit! (rt/nav-back-local))
@@ -478,6 +526,10 @@
                               (filter #(= (:event-type %) :mouse-leave)))
         interactions-inv (->> (:interactions shape)
                               (filter #(= (:event-type %) :mouse-over)))]
+    ;; A copy switched while hovering goes back to its variant
+    (when-let [{:keys [component-id animation]} (get @hover-variants (:id shape))]
+      (swap! hover-variants dissoc (:id shape))
+      (change-variant! component-id animation (:id shape) false))
     (when (or (seq interactions) (seq interactions-inv))
       (dom/stop-propagation event)
       (doseq [interaction interactions]

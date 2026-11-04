@@ -62,6 +62,15 @@
           (t/is (= "swap-overlay" (aget (format/format-action interaction nil nil nil) "type")))
           (t/is (= interaction (round-trip interaction)))))
 
+      (t/testing "change to"
+        (let [interaction {:action-type :change-to
+                           :component-id (random-uuid)
+                           :animation {:animation-type :smart-animate :duration 150 :easing :ease-out}}
+              action      (format/format-action interaction nil nil nil)]
+          (t/is (= "change-to" (aget action "type")))
+          (t/is (= (str (:component-id interaction)) (aget action "variant")))
+          (t/is (= interaction (round-trip interaction)))))
+
       (t/testing "scroll to"
         (let [interaction {:action-type :scroll-to
                            :destination (random-uuid)

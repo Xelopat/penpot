@@ -233,3 +233,34 @@
         (t/is (= [] (:fills prepared)))
         (t/is (true? (:show-content prepared)))
         (t/is (= [:click] (mapv :event-type (:interactions prepared))))))))
+
+(t/deftest overlay-only-frames
+  (let [id     #(uuid/custom 4 %)
+        click  (fn [action-type dest] {:event-type :click :action-type action-type :destination dest})
+        objects {(id 1) {:id (id 1) :interactions [(click :navigate (id 2))
+                                                   (click :open-overlay (id 3))
+                                                   (click :swap-overlay (id 4))
+                                                   (click :open-overlay (id 2))]}
+                 (id 5) {:id (id 5) :interactions [(click :toggle-overlay (id 6))]}}
+        flows  {(id 9) {:id (id 9) :starting-frame (id 6)}}]
+    (t/testing "boards only opened as overlays are not screens"
+      (t/is (= #{(id 3) (id 4) (id 6)} (dv/overlay-only-frame-ids objects {}))))
+    (t/testing "navigation targets and flow starts stay screens"
+      (t/is (= #{(id 3) (id 4)} (dv/overlay-only-frame-ids objects flows))))))
+
+(t/deftest copies-inherit-interactions
+  (let [id      #(uuid/custom 5 %)
+        click   {:event-type :click :action-type :change-to :component-id (id 9)}
+        own     {:event-type :click :action-type :open-url :url "https://penpot.app"}
+        index   {(id 1) {:id (id 1) :interactions [click]}
+                 (id 2) {:id (id 2) :shape-ref (id 1)}}
+        objects {(id 3) {:id (id 3) :shape-ref (id 2)}
+                 (id 4) {:id (id 4) :shape-ref (id 1) :interactions [own]}
+                 (id 5) {:id (id 5)}}
+        result  (dv/inherit-interactions objects index)]
+    (t/testing "a copy without interactions uses those of its main, through nested copies"
+      (t/is (= [click] (get-in result [(id 3) :interactions]))))
+    (t/testing "interactions of the copy itself win"
+      (t/is (= [own] (get-in result [(id 4) :interactions]))))
+    (t/testing "other layers are untouched"
+      (t/is (nil? (get-in result [(id 5) :interactions]))))))

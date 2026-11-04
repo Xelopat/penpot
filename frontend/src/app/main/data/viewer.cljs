@@ -10,10 +10,16 @@
    [app.common.data.macros :as dm]
    [app.common.features :as cfeat]
    [app.common.files.changes :as cpc]
+   [app.common.files.changes-builder :as pcb]
    [app.common.files.helpers :as cfh]
    [app.common.geom.point :as gpt]
+   [app.common.logic.libraries :as cll]
+   [app.common.logic.variants :as clv]
    [app.common.schema :as sm]
    [app.common.transit :as t]
+   [app.common.types.component :as ctk]
+   [app.common.types.components-list :as ctkl]
+   [app.common.types.file :as ctf]
    [app.common.types.shape-tree :as ctt]
    [app.common.types.shape.interactions :as ctsi]
    [app.common.uuid :as uuid]
@@ -32,6 +38,76 @@
    [potok.v2.core :as ptk]))
 
 ;; --- Local State Initialization
+
+(defn overlay-only-frame-ids
+  "Top-level boards only used as overlays: opened by overlay actions, never
+  navigated to and not starting a flow. They stay available to overlays
+  but are not listed as screens of the prototype."
+  [objects flows]
+  (let [interactions (mapcat :interactions (vals objects))
+        targets      (fn [action-types]
+                       (into #{}
+                             (comp (filter #(contains? action-types (:action-type %)))
+                                   (keep :destination))
+                             interactions))
+        overlays     (targets #{:open-overlay :toggle-overlay :swap-overlay})
+        screens      (into (targets #{:navigate :scroll-to})
+                           (keep :starting-frame)
+                           (vals flows))]
+    (reduce disj overlays screens)))
+
+(defn shapes-index
+  "All the shapes of the file and its libraries by id, to resolve what the
+  layers of component copies refer to."
+  [file libraries]
+  (into {}
+        (comp (mapcat #(vals (dm/get-in % [:data :pages-index])))
+              (mapcat :objects))
+        (cons file (vals libraries))))
+
+(defn- inherited-interactions
+  "Interactions of the main layer a copy layer refers to, following the
+  chain of copies, like in other design tools the interactions of a
+  component apply to all its copies."
+  [index shape]
+  (loop [ref-id (:shape-ref shape) depth 0]
+    (when (and (some? ref-id) (< depth 10))
+      (let [ref (get index ref-id)]
+        (if (seq (:interactions ref))
+          (:interactions ref)
+          (recur (:shape-ref ref) (inc depth)))))))
+
+(defn inherit-interactions
+  "Copy layers without interactions of their own use those of their
+  component. Only the viewer copy of the page is changed."
+  [objects index]
+  (reduce-kv (fn [objects id shape]
+               (if (and (some? (:shape-ref shape)) (empty? (:interactions shape)))
+                 (if-let [interactions (inherited-interactions index shape)]
+                   (assoc-in objects [id :interactions] interactions)
+                   objects)
+                 objects))
+             objects
+             objects))
+
+(defn- page-frames
+  "Screens of a page in the viewer, and all its boards (overlays included)."
+  [page index]
+  (let [page       (update page :objects inherit-interactions index)
+        objects    (:objects page)
+        all-frames (ctt/get-viewer-frames objects {:all-frames? true})
+        frames     (ctt/get-viewer-frames objects)
+        hidden     (overlay-only-frame-ids objects (:flows page))
+        ;; Sets of variants and main components are not screens either
+        screens    (into []
+                         (remove #(or (contains? hidden (:id %))
+                                      (ctk/is-variant-container? %)
+                                      (ctk/main-instance? %)))
+                         frames)]
+    (assoc page
+           ;; Keep a prototype made only of overlays browsable
+           :frames (if (seq screens) screens frames)
+           :all-frames all-frames)))
 
 (def ^:private
   default-local-state
@@ -191,18 +267,119 @@
       (let [file (-> (dm/get-in state [:viewer :file])
                      (update :data cpc/process-changes changes false))
 
+            index
+            (shapes-index file (dm/get-in state [:viewer :libraries]))
+
             pages
             (->> (dm/get-in file [:data :pages])
                  (map (fn [page-id]
-                        (let [data (get-in file [:data :pages-index page-id])]
-                          [page-id (assoc data
-                                          :frames (ctt/get-viewer-frames (:objects data))
-                                          :all-frames (ctt/get-viewer-frames (:objects data) {:all-frames? true}))])))
+                        [page-id (page-frames (get-in file [:data :pages-index page-id]) index)]))
                  (into {}))]
 
         (-> state
             (assoc-in [:viewer :file] file)
             (assoc-in [:viewer :pages] pages))))))
+
+;; --- Variant switching (change-to)
+
+(defn- find-component
+  "The component `component-id` and the file holding it."
+  [file libraries component-id]
+  (some (fn [library]
+          (when-let [component (ctkl/get-component (:data library) component-id)]
+            [component library]))
+        (cons file (vals libraries))))
+
+(defn variant-copy-of
+  "The component copy holding `shape-id` that the variant `component-id`
+  can replace: the nearest copy whose component belongs to the same set of
+  variants. Main components are never switched."
+  [file libraries objects shape-id component-id]
+  (when-let [[target _] (find-component file libraries component-id)]
+    (->> (cfh/get-parent-ids-seq-with-self objects shape-id)
+         (keep #(get objects %))
+         (filter ctk/instance-head?)
+         (remove ctk/main-instance?)
+         (d/seek (fn [head]
+                   (let [component (ctf/resolve-component head file libraries)]
+                     (and (some? component)
+                          (or (= (:id component) component-id)
+                              (and (some? (:variant-id target))
+                                   (= (:variant-id component) (:variant-id target)))))))))))
+
+(defn- name-path-index
+  "Shapes of the subtree of `root-id` by the path of their names."
+  [objects root-id]
+  (letfn [(walk [acc id path]
+            (reduce (fn [acc child-id]
+                      (let [child (get objects child-id)
+                            path  (conj path (:name child))]
+                        (walk (assoc acc path child) child-id path)))
+                    acc
+                    (dm/get-in objects [id :shapes])))]
+    (walk {[] (get objects root-id)} root-id [])))
+
+(defn- shift-position-data
+  [position-data dx dy]
+  (mapv #(-> % (update :x + dx) (update :y + dy)) position-data))
+
+(defn variant-swap
+  "Changes that switch the copy `instance-id` of the page to the variant
+  `component-id`, keeping its overrides, exactly as the workspace does.
+  They are only applied to the viewer copy of the file. Returns
+  `{:changes .. :new-id ..}`, or nil when the copy already is that variant."
+  [file libraries page-id instance-id component-id]
+  (let [page      (dm/get-in file [:data :pages-index page-id])
+        objects   (:objects page)
+        shape     (get objects instance-id)
+        current   (some-> shape (ctf/resolve-component file libraries))
+        [_ library] (find-component file libraries component-id)]
+    (when (and (some? shape) (some? library) (not= (:id current) component-id))
+      (let [libraries   (assoc libraries (:id file) file)
+            ldata       (:data library)
+            orig-shapes (cfh/get-children-with-self objects instance-id)
+            old-paths   (name-path-index objects instance-id)
+            index       (d/index-of (dm/get-in objects [(:parent-id shape) :shapes]) instance-id)
+            keep-props  (select-keys shape ctk/swap-keep-attrs)
+
+            [new-shape _ changes]
+            (cll/generate-component-swap (-> (pcb/empty-changes nil page-id)
+                                             (pcb/with-objects objects))
+                                         objects shape ldata page libraries component-id
+                                         index nil keep-props true)
+
+            [changes _]
+            (clv/generate-keep-touched changes new-shape shape orig-shapes page libraries ldata)
+
+            ;; Overridden texts keep the glyph positions of the old copy;
+            ;; move them with the text layer when the variants lay it out
+            ;; in another place
+            new-objects (pcb/get-objects changes)
+            moved-texts (->> (name-path-index new-objects (:id new-shape))
+                             (keep (fn [[path new-text]]
+                                     (let [old-text (get old-paths path)]
+                                       (when (and (cfh/text-shape? new-text)
+                                                  (some? (:position-data new-text))
+                                                  (= (:position-data new-text) (:position-data old-text)))
+                                         (let [dx (- (dm/get-in new-text [:selrect :x]) (dm/get-in old-text [:selrect :x]))
+                                               dy (- (dm/get-in new-text [:selrect :y]) (dm/get-in old-text [:selrect :y]))]
+                                           (when (or (not (zero? dx)) (not (zero? dy)))
+                                             [(:id new-text) dx dy]))))))
+                             (vec))
+
+            changes
+            (reduce (fn [changes [id dx dy]]
+                      (pcb/update-shapes changes [id] #(update % :position-data shift-position-data dx dy)
+                                         {:ignore-touched true}))
+                    changes
+                    moved-texts)]
+        {:changes (:redo-changes changes)
+         :new-id (:id new-shape)}))))
+
+(defn apply-variant-swap
+  "Show the result of `variant-swap` in the viewer (not saved)."
+  [changes]
+  (apply-changes-viewer changes))
 
 (defn- generate-update-position-data-changes
   [shapes page-id]
@@ -270,12 +447,10 @@
 
 (defn bundle-fetched
   [{:keys [project file team share-links libraries users permissions thumbnails] :as bundle}]
-  (let [pages (->> (dm/get-in file [:data :pages])
+  (let [index (shapes-index file (d/index-by :id libraries))
+        pages (->> (dm/get-in file [:data :pages])
                    (map (fn [page-id]
-                          (let [data (get-in file [:data :pages-index page-id])]
-                            [page-id (assoc data
-                                            :frames (ctt/get-viewer-frames (:objects data))
-                                            :all-frames (ctt/get-viewer-frames (:objects data) {:all-frames? true}))])))
+                          [page-id (page-frames (get-in file [:data :pages-index page-id]) index)]))
                    (into {}))]
 
     (ptk/reify ::bundle-fetched

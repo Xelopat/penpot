@@ -10,9 +10,13 @@
    [app.common.data :as d]
    [app.common.files.helpers :as cfh]
    [app.common.geom.point :as gpt]
+   [app.common.types.component :as ctk]
+   [app.common.types.components-list :as ctkl]
+   [app.common.types.file :as ctf]
    [app.common.types.page :as ctp]
    [app.common.types.shape-tree :as ctt]
    [app.common.types.shape.interactions :as ctsi]
+   [app.common.types.variant :as ctv]
    [app.common.uuid :as uuid]
    [app.main.data.common :as dcm]
    [app.main.data.workspace.interactions :as dwi]
@@ -61,6 +65,8 @@
                         (get destination :name (tr "workspace.options.interaction-none")))
     :scroll-to      (tr "workspace.options.interaction-scroll-to-dest"
                         (get destination :name (tr "workspace.options.interaction-none")))
+    :change-to      (tr "workspace.options.interaction-change-to-dest"
+                        (get destination :name (tr "workspace.options.interaction-none")))
     :close-overlay  (tr "workspace.options.interaction-close-overlay-dest"
                         (get destination :name (tr "workspace.options.interaction-self")))
     :prev-screen    (tr "workspace.options.interaction-prev-screen")
@@ -90,6 +96,31 @@
                  :label (if (= (:id target) (:id frame))
                           (str (:name frame) " (" (tr "workspace.options.interaction-scroll-top") ")")
                           (:name target))})))))
+
+(defn- variant-label
+  [component]
+  (let [properties (ctv/properties-to-name (:variant-properties component))]
+    (if (seq properties)
+      (str (:name component) " · " properties)
+      (:name component))))
+
+(defn- get-variant-options
+  "Variants the component copy (or main) holding `shape` can change to."
+  [objects file libraries shape]
+  (let [head       (->> (cfh/get-parent-ids-seq-with-self objects (:id shape))
+                        (keep #(get objects %))
+                        (d/seek ctk/instance-head?))
+        component  (when (and head file)
+                     (ctf/resolve-component head file libraries))
+        library    (when head (get libraries (:component-file head)))
+        variant-id (:variant-id component)]
+    (when (and (some? variant-id) (some? library))
+      (->> (ctkl/components-seq (:data library))
+           (filter #(= variant-id (:variant-id %)))
+           (map (fn [component]
+                  {:value (str (:id component))
+                   :label (variant-label component)}))
+           (sort-by :label)))))
 
 (defn- get-shared-frames-options
   [shared-frames]
@@ -191,7 +222,18 @@
 (mf/defc interaction-item*
   [{:keys [index shape interaction update-interaction remove-interaction]}]
   (let [objects              (deref refs/workspace-page-objects)
-        destination          (get objects (:destination interaction))
+        files                (mf/deref refs/files)
+        file                 (mf/deref refs/file)
+        libraries            (mf/with-memo [files file]
+                               (refs/select-libraries files (:id file)))
+        variant-opts         (mf/with-memo [objects file libraries shape]
+                               (get-variant-options objects file libraries shape))
+        change-to?           (ctsi/has-component? interaction)
+        variant              (when change-to?
+                               (d/seek #(= (:value %) (str (:component-id interaction))) variant-opts))
+        destination          (if change-to?
+                               (when variant {:name (:label variant)})
+                               (get objects (:destination interaction)))
 
         frames               (mf/with-memo [objects]
                                (ctt/get-viewer-frames objects {:all-frames? true}))
@@ -264,6 +306,13 @@
              (update-interaction index #(ctsi/set-relative-to-viewport % true))
              (let [value (uuid/parse* event)]
                (update-interaction index #(ctsi/set-position-relative-to % value))))))
+
+        change-variant
+        (mf/use-fn
+         (mf/deps index update-interaction)
+         (fn [value]
+           (let [value (when (not= value "") (uuid/parse value))]
+             (update-interaction index #(ctsi/set-component-id % value)))))
 
         change-scroll-offset
         (mf/use-fn
@@ -388,6 +437,7 @@
                              {:value :swap-overlay   :label (tr "workspace.options.interaction-swap-overlay")}
                              {:value :close-overlay  :label (tr "workspace.options.interaction-close-overlay")}
                              {:value :scroll-to      :label (tr "workspace.options.interaction-scroll-to")}
+                             {:value :change-to      :label (tr "workspace.options.interaction-change-to")}
                              {:value :prev-screen    :label (tr "workspace.options.interaction-prev-screen")}
                              {:value :open-url       :label (tr "workspace.options.interaction-open-url")}]
 
@@ -510,6 +560,18 @@
                         :on-change change-destination
                         :searchable? true
                         :search-placeholder (tr "workspace.options.interaction-destination")}]]])
+
+        ;; Variant of change-to
+        (when change-to?
+          [:div {:class (stl/css :interaction-row)}
+           [:div {:class (stl/css :interaction-row-label)}
+            [:div {:class (stl/css :interaction-row-name)}
+             (tr "workspace.options.interaction-variant")]]
+           [:div {:class (stl/css :interaction-row-select)}
+            [:& select {:default-value (str (:component-id interaction))
+                        :options (d/concat-vec [{:value "" :label (tr "workspace.options.interaction-none")}]
+                                               variant-opts)
+                        :on-change change-variant}]]])
 
         ;; Scroll offset
         (when (ctsi/has-scroll-offset? interaction)

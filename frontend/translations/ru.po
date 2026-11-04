@@ -5811,6 +5811,18 @@ msgid "workspace.options.interaction-toggle-overlay-dest"
 msgstr "Переключить наложение: %s"
 
 #: src/app/main/ui/workspace/sidebar/options/menus/interactions.cljs
+msgid "workspace.options.interaction-change-to"
+msgstr "Сменить вариант"
+
+#: src/app/main/ui/workspace/sidebar/options/menus/interactions.cljs
+msgid "workspace.options.interaction-change-to-dest"
+msgstr "Сменить вариант: %s"
+
+#: src/app/main/ui/workspace/sidebar/options/menus/interactions.cljs
+msgid "workspace.options.interaction-variant"
+msgstr "Вариант"
+
+#: src/app/main/ui/workspace/sidebar/options/menus/interactions.cljs
 msgid "workspace.options.scroll-behavior"
 msgstr "Прокрутка"
 

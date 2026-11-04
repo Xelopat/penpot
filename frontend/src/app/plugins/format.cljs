@@ -581,6 +581,11 @@
             :destination (when (:destination interaction) (shape-proxy plugin file-id page-id (:destination interaction)))
             :animation (format-animation (:animation interaction))}
 
+       :change-to
+       #js {:type "change-to"
+            :variant (format-id (:component-id interaction))
+            :animation (format-animation (:animation interaction))}
+
        :scroll-to
        #js {:type "scroll-to"
             :destination (when (:destination interaction) (shape-proxy plugin file-id page-id (:destination interaction)))

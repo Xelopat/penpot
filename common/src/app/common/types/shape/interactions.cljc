@@ -43,7 +43,8 @@
     :prev-screen
     :open-url
     :scroll-to
-    :swap-overlay})
+    :swap-overlay
+    :change-to})
 
 (def overlay-positioning-types
   #{:manual
@@ -137,6 +138,7 @@
    [:position-relative-to {:optional true} [:maybe ::sm/uuid]]
    [:relative-to-viewport {:optional true} :boolean]
    [:scroll-offset {:optional true} ::gpt/point]
+   [:component-id {:optional true} [:maybe ::sm/uuid]]
    [:url {:optional true} :string]])
 
 (def schema:navigate-interaction
@@ -194,6 +196,14 @@
    [:scroll-offset {:optional true} ::gpt/point]
    [:animation {:optional true} schema:animation]])
 
+(def schema:change-to-interaction
+  [:map {:title "ChangeToInteraction"}
+   [:action-type [:= :change-to]]
+   [:event-type [::sm/one-of event-types]]
+   ;; The variant (component) the copy holding the trigger switches to
+   [:component-id {:optional true} [:maybe ::sm/uuid]]
+   [:animation {:optional true} schema:animation]])
+
 (def schema:close-overlay-interaction
   [:map {:title "CloseOverlayInteraction"}
    [:action-type [:= :close-overlay]]
@@ -222,7 +232,8 @@
                                 (sg/generator schema:prev-scren-interaction)
                                 (sg/generator schema:open-url-interaction)
                                 (sg/generator schema:swap-overlay-interaction)
-                                (sg/generator schema:scroll-to-interaction))}
+                                (sg/generator schema:scroll-to-interaction)
+                                (sg/generator schema:change-to-interaction))}
    [:and
     schema:generic-interaction-attrs
     [:multi {:dispatch :action-type :title "InteractionAttrs"}
@@ -233,7 +244,8 @@
      [:prev-screen schema:prev-scren-interaction]
      [:open-url schema:open-url-interaction]
      [:swap-overlay schema:swap-overlay-interaction]
-     [:scroll-to schema:scroll-to-interaction]]]])
+     [:scroll-to schema:scroll-to-interaction]
+     [:change-to schema:change-to-interaction]]]])
 
 (def check-interaction
   (sm/check-fn schema:interaction))
@@ -271,6 +283,13 @@
     {:animation-type :smart-animate
      :duration default-scroll-duration
      :easing :ease-in-out}
+
+    :change-to
+    {:animation-type :smart-animate
+     :duration (if (contains? #{:mouse-over :mouse-enter :mouse-leave} event-type)
+                 default-hover-animation-duration
+                 default-animation-duration)
+     :easing :ease-out}
 
     nil))
 
@@ -338,6 +357,11 @@
             (assoc interaction
                    :action-type action-type
                    :destination (get interaction :destination))
+
+            :change-to
+            (assoc interaction
+                   :action-type action-type
+                   :component-id (get interaction :component-id))
 
             :prev-screen
             (assoc interaction
@@ -534,6 +558,22 @@
            :position-relative-to nil)
     (dissoc interaction :relative-to-viewport)))
 
+(defn has-component?
+  "Check if the interaction switches a component copy to a variant."
+  [interaction]
+  (= (:action-type interaction) :change-to))
+
+(defn set-component-id
+  [interaction component-id]
+
+  (assert (check-interaction interaction))
+  (assert (or (nil? component-id) (uuid? component-id))
+          "expected valid uuid for `component-id`")
+  (assert (has-component? interaction)
+          "expected compatible interaction map")
+
+  (assoc interaction :component-id component-id))
+
 (defn has-scroll-offset?
   [interaction]
   (= (:action-type interaction) :scroll-to))
@@ -673,7 +713,7 @@
 
 (defn has-animation?
   [interaction]
-  (#{:navigate :open-overlay :close-overlay :toggle-overlay :swap-overlay :scroll-to}
+  (#{:navigate :open-overlay :close-overlay :toggle-overlay :swap-overlay :scroll-to :change-to}
    (:action-type interaction)))
 
 (defn allow-push?
@@ -685,7 +725,7 @@
   [action-type]
   ; Smart animate interpolates layers between two screens or two overlay
   ; states; for scroll-to it is the smooth scroll itself.
-  (contains? #{:navigate :swap-overlay :scroll-to} action-type))
+  (contains? #{:navigate :swap-overlay :scroll-to :change-to} action-type))
 
 (defn allowed-animation?
   [action-type animation-type]
@@ -696,6 +736,7 @@
     :push          (allow-push? action-type)
     :smart-animate (allow-smart-animate? action-type)
     ;; scroll-to only scrolls, so it only supports the smooth scroll
+    :slide         (not (contains? #{:scroll-to :change-to} action-type))
     (not= action-type :scroll-to)))
 
 (defn set-animation-type
