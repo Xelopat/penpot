@@ -13,6 +13,6 @@ RUN bash docker/kordex/build-backend.sh "$KORDEX_REVISION"
 
 FROM official
 COPY --from=build --chown=penpot:penpot /workspace/backend/target/penpot.jar /opt/penpot/backend/penpot.jar
-ARG KORDEX_VERSION=2.18.5-kordex.4
+ARG KORDEX_VERSION=2.18.5-kordex.5
 LABEL org.opencontainers.image.source="https://github.com/Xelopat/penpot" \
       org.opencontainers.image.version=$KORDEX_VERSION

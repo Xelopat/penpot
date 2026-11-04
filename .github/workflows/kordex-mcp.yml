@@ -33,14 +33,14 @@ jobs:
         run: |
           set -euo pipefail
           echo "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
-          version="2.18.5-kordex.2-${GITHUB_SHA:0:12}"
+          version="2.18.5-kordex.3-${GITHUB_SHA:0:12}"
           docker buildx build \
             --file docker/images/Dockerfile.mcp.kordex \
             --platform linux/amd64,linux/arm64 \
             --build-arg "KORDEX_MCP_VERSION=$version" \
             --tag "ghcr.io/xelopat/penpot-mcp:$version" \
             --tag ghcr.io/xelopat/penpot-mcp:kordex \
-            --tag ghcr.io/xelopat/penpot-mcp:2.18.5-kordex.2 \
+            --tag ghcr.io/xelopat/penpot-mcp:2.18.5-kordex.3 \
             --cache-from type=gha,scope=kordex-mcp \
             --cache-to type=gha,scope=kordex-mcp,mode=max \
             --push .

@@ -35,7 +35,7 @@ jobs:
         run: |
           set -euo pipefail
           echo "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
-          version="2.18.5-kordex.4-${GITHUB_SHA:0:12}"
+          version="2.18.5-kordex.5-${GITHUB_SHA:0:12}"
           docker buildx build \
             --file docker/kordex/Dockerfile \
             --platform linux/amd64,linux/arm64 \
@@ -43,7 +43,7 @@ jobs:
             --build-arg "KORDEX_REVISION=$GITHUB_SHA" \
             --tag "ghcr.io/xelopat/penpot-frontend:$version" \
             --tag ghcr.io/xelopat/penpot-frontend:kordex \
-            --tag ghcr.io/xelopat/penpot-frontend:2.18.5-kordex.4 \
+            --tag ghcr.io/xelopat/penpot-frontend:2.18.5-kordex.5 \
             --cache-from type=gha \
             --cache-to type=gha,mode=max \
             --push .

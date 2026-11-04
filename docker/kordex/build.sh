@@ -5,7 +5,7 @@ cd /workspace/common
 clojure -T:build compile
 revision="${2:-000000000000}"
 [[ "$revision" =~ ^[0-9a-f]{12,40}$ ]] || { echo 'Invalid build revision'; exit 1; }
-app_version="kordex-2.18.5-4-g${revision:0:12}"
+app_version="kordex-2.18.5-5-g${revision:0:12}"
 clojure -M -e "(require '[app.common.version :as v]) (assert (= \"2.18.5\" (:base (v/parse \"$app_version\"))))"
 clojure -M:dev:test --focus common-tests.types.shape-interactions-test \
   > /workspace/kordex-common-tests.log 2>&1 || {
@@ -20,7 +20,7 @@ cd /workspace/frontend
 cljfmt check src/app/plugins/parser.cljs src/app/plugins/format.cljs src/app/plugins/file.cljs src/app/plugins/page.cljs \
   src/app/plugins/shape.cljs src/app/main/data/viewer.cljs src/app/main/data/workspace/interactions.cljs \
   src/app/main/ui/viewer.cljs src/app/main/ui/viewer/shapes.cljs src/app/main/ui/viewer/interactions.cljs \
-  src/app/main/ui/viewer/smart_animate.cljs src/app/main/ui/viewer/scroll.cljs src/app/main/ui/viewer/scroll_box.cljs \
+  src/app/main/ui/viewer/smart_animate.cljs src/app/main/ui/viewer/scroll.cljs src/app/main/ui/viewer/scroll_box.cljs src/app/main/ui/viewer/variant_transition.cljs \
   src/app/main/ui/workspace/sidebar/options/menus/interactions.cljs \
   src/app/main/ui/workspace/viewport/interactions.cljs \
   test/frontend_tests/plugins/parser_test.cljs \
