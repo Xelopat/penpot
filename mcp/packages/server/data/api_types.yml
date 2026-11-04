@@ -1035,6 +1035,8 @@ Board:
     interface Board {
         type: "board";
         clipContent: boolean;
+        scrollOverflow: "none" | "horizontal" | "vertical" | "both";
+        scrollSnap: boolean;
         showInViewMode: boolean;
         grid?: GridLayout;
         flex?: FlexLayout;
@@ -1209,6 +1211,24 @@ Board:
         ```
 
         When true the board will clip the children inside
+      scrollOverflow: |-
+        ```
+        scrollOverflow: "none" | "horizontal" | "vertical" | "both"
+        ```
+
+        Overflow scrolling in View mode, like Figma: the content of a nested
+        board that is larger than the board scrolls with the wheel, the
+        trackpad, touch and mouse drag. The board background stays in place.
+        Top-level boards always scroll with the page; use this on carousels,
+        horizontal card lists and scrollable panels inside a screen. Requires
+        `clipContent = true`.
+      scrollSnap: |-
+        ```
+        scrollSnap: boolean
+        ```
+
+        When true, the scroll stops with a direct child aligned to the board
+        edge (like CSS `scroll-snap`). Only used when `scrollOverflow` is set.
       showInViewMode: |-
         ```
         showInViewMode: boolean
@@ -2187,6 +2207,8 @@ VariantContainer:
     interface VariantContainer {
         type: "board";
         clipContent: boolean;
+        scrollOverflow: "none" | "horizontal" | "vertical" | "both";
+        scrollSnap: boolean;
         showInViewMode: boolean;
         grid?: GridLayout;
         flex?: FlexLayout;
@@ -2361,6 +2383,24 @@ VariantContainer:
         ```
 
         When true the board will clip the children inside
+      scrollOverflow: |-
+        ```
+        scrollOverflow: "none" | "horizontal" | "vertical" | "both"
+        ```
+
+        Overflow scrolling in View mode, like Figma: the content of a nested
+        board that is larger than the board scrolls with the wheel, the
+        trackpad, touch and mouse drag. The board background stays in place.
+        Top-level boards always scroll with the page; use this on carousels,
+        horizontal card lists and scrollable panels inside a screen. Requires
+        `clipContent = true`.
+      scrollSnap: |-
+        ```
+        scrollSnap: boolean
+        ```
+
+        When true, the scroll stops with a direct child aligned to the board
+        edge (like CSS `scroll-snap`). Only used when `scrollOverflow` is set.
       showInViewMode: |-
         ```
         showInViewMode: boolean

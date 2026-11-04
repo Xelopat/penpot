@@ -1910,6 +1910,49 @@
                      :else
                      (st/emit! (dwsh/update-shapes [id] #(assoc % :hide-in-viewer (not value))))))}
 
+                {:name "scrollOverflow"
+                 :get
+                 (fn [self]
+                   (-> self u/proxy->shape :scroll-overflow (or :none) format/format-key))
+                 :set
+                 (fn [_ value]
+                   (let [overflow (parser/parse-keyword value)]
+                     (cond
+                       (not (or (= overflow :none) (contains? cts/scroll-overflow-types overflow)))
+                       (u/not-valid plugin-id :scrollOverflow value)
+
+                       (not (r/check-permission plugin-id "content:write"))
+                       (u/not-valid plugin-id :scrollOverflow "Plugin doesn't have 'content:write' permission")
+
+                       (not (u/page-active? page-id))
+                       (u/not-valid plugin-id :scrollOverflow "Cannot modify a page that is not currently active")
+
+                       :else
+                       (st/emit! (dwsh/update-shapes [id] #(if (= overflow :none)
+                                                             (dissoc % :scroll-overflow :scroll-snap)
+                                                             (assoc % :scroll-overflow overflow)))))))}
+
+                {:name "scrollSnap"
+                 :get
+                 (fn [self]
+                   (-> self u/proxy->shape :scroll-snap true?))
+                 :set
+                 (fn [_ value]
+                   (cond
+                     (not (boolean? value))
+                     (u/not-valid plugin-id :scrollSnap value)
+
+                     (not (r/check-permission plugin-id "content:write"))
+                     (u/not-valid plugin-id :scrollSnap "Plugin doesn't have 'content:write' permission")
+
+                     (not (u/page-active? page-id))
+                     (u/not-valid plugin-id :scrollSnap "Cannot modify a page that is not currently active")
+
+                     :else
+                     (st/emit! (dwsh/update-shapes [id] #(if value
+                                                           (assoc % :scroll-snap true)
+                                                           (dissoc % :scroll-snap))))))}
+
                 {:name "grid"
                  :get
                  (fn [self]

@@ -10,6 +10,7 @@
    [app.common.uuid :as uuid]
    [app.main.data.viewer :as dv]
    [app.main.router :as rt]
+   [app.main.ui.viewer.scroll-box :as vsb]
    [beicon.v2.core :as rx]
    [cljs.test :as t]
    [potok.v2.core :as ptk]))
@@ -176,3 +177,45 @@
                                                   false false nil false)
                                state)]
         (t/is (= 2 (count (:viewer-overlays result))))))))
+
+(defn- box-objects
+  "Screen > carousel (horizontal scroll) > three cards, one with a nested
+  scrolling board that must scroll with the carousel."
+  []
+  (let [rect (fn [x y w h] {:x x :y y :width w :height h :x1 x :y1 y :x2 (+ x w) :y2 (+ y h)})
+        id   #(uuid/custom 3 %)]
+    {(id 1) {:id (id 1) :type :frame :parent-id uuid/zero :shapes [(id 2)] :selrect (rect 0 0 1440 900)}
+     (id 2) {:id (id 2) :type :frame :parent-id (id 1) :shapes [(id 3) (id 4) (id 5)]
+             :scroll-overflow :horizontal :scroll-snap true :fills [{:fill-color "#fff"}]
+             :interactions [{:event-type :after-delay :action-type :navigate}
+                            {:event-type :click :action-type :navigate}]
+             :selrect (rect 100 100 600 300)}
+     (id 3) {:id (id 3) :type :rect :parent-id (id 2) :selrect (rect 100 100 400 300)}
+     (id 4) {:id (id 4) :type :rect :parent-id (id 2) :selrect (rect 520 100 400 300)}
+     (id 5) {:id (id 5) :type :frame :parent-id (id 2) :shapes [] :scroll-overflow :vertical
+             :selrect (rect 940 100 400 320)}}))
+
+(t/deftest scroll-boxes
+  (let [objects (box-objects)
+        id      #(uuid/custom 3 %)
+        board   (get objects (id 2))]
+
+    (t/testing "only the outermost scrolling boards get a scroll box"
+      (t/is (= #{(id 2)} (vsb/scroll-board-ids objects (id 1))))
+      (t/is (= #{(id 3) (id 4) (id 5)} (vsb/scroll-content-ids objects #{(id 2)}))))
+
+    (t/testing "hidden boards and boards without overflow do not scroll"
+      (t/is (empty? (vsb/scroll-board-ids (assoc-in objects [(id 2) :hidden] true) (id 1))))
+      (t/is (= #{(id 5)} (vsb/scroll-board-ids (update objects (id 2) dissoc :scroll-overflow) (id 1)))))
+
+    (t/testing "the content extends to the farthest child"
+      (t/is (= [1240 320] (vsb/content-size objects board))))
+
+    (t/testing "snap points align each direct child with the board"
+      (t/is (= {:x #{0 420 840} :y #{0}} (vsb/snap-points objects board))))
+
+    (t/testing "the board in the scroll box keeps only its content"
+      (let [prepared (vsb/prepare-board board)]
+        (t/is (= [] (:fills prepared)))
+        (t/is (true? (:show-content prepared)))
+        (t/is (= [:click] (mapv :event-type (:interactions prepared))))))))

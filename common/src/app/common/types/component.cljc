@@ -102,6 +102,8 @@
    :grids                   :grids-group
 
    :show-content            :show-content
+   :scroll-overflow         :show-content
+   :scroll-snap             :show-content
 
    :layout                  :layout-container
 

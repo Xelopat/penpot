@@ -37,20 +37,21 @@
   [easing]
   (cubic-bezier (get easing-curves easing (:ease-in-out easing-curves))))
 
-(defonce ^:private current-frame (atom nil))
+;; Animation frame in progress for each scrolled element
+(defonce ^:private current-frames (js/WeakMap.))
 
 (defn- cancel!
-  []
-  (when-let [id @current-frame]
+  [^js node]
+  (when-let [id (.get current-frames node)]
     (js/cancelAnimationFrame id)
-    (reset! current-frame nil)))
+    (.delete current-frames node)))
 
 (defn animate-scroll!
   "Scroll `node` to `left`/`top` following `animation` (its duration and
   easing). Without animation the scroll is immediate. A new scroll cancels
-  the one in progress."
+  the one in progress on the same element."
   [^js node left top animation]
-  (cancel!)
+  (cancel! node)
   (let [max-top  (max 0 (- (.-scrollHeight node) (.-clientHeight node)))
         max-left (max 0 (- (.-scrollWidth node) (.-clientWidth node)))
         top      (-> top (max 0) (min max-top))
@@ -69,6 +70,11 @@
                           (set! (.-scrollTop node) (+ from-top (* k (- top from-top))))
                           (set! (.-scrollLeft node) (+ from-left (* k (- left from-left))))
                           (if (< progress 1)
-                            (reset! current-frame (js/requestAnimationFrame step))
-                            (reset! current-frame nil))))]
-        (reset! current-frame (js/requestAnimationFrame step))))))
+                            (.set current-frames node (js/requestAnimationFrame step))
+                            (.delete current-frames node))))]
+        (.set current-frames node (js/requestAnimationFrame step))))))
+
+(defn scrolling?
+  "Check if an animated scroll of `node` is in progress."
+  [^js node]
+  (.has current-frames node))

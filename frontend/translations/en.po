@@ -8133,6 +8133,34 @@ msgid "workspace.options.interaction-toggle-overlay-dest"
 msgstr "Toggle overlay: %s"
 
 #: src/app/main/ui/workspace/sidebar/options/menus/interactions.cljs
+msgid "workspace.options.scroll-behavior"
+msgstr "Scroll behavior"
+
+#: src/app/main/ui/workspace/sidebar/options/menus/interactions.cljs
+msgid "workspace.options.scroll-overflow"
+msgstr "Overflow"
+
+#: src/app/main/ui/workspace/sidebar/options/menus/interactions.cljs
+msgid "workspace.options.scroll-overflow-both"
+msgstr "Horizontal and vertical"
+
+#: src/app/main/ui/workspace/sidebar/options/menus/interactions.cljs
+msgid "workspace.options.scroll-overflow-horizontal"
+msgstr "Horizontal scrolling"
+
+#: src/app/main/ui/workspace/sidebar/options/menus/interactions.cljs
+msgid "workspace.options.scroll-overflow-none"
+msgstr "No scrolling"
+
+#: src/app/main/ui/workspace/sidebar/options/menus/interactions.cljs
+msgid "workspace.options.scroll-overflow-vertical"
+msgstr "Vertical scrolling"
+
+#: src/app/main/ui/workspace/sidebar/options/menus/interactions.cljs
+msgid "workspace.options.scroll-snap"
+msgstr "Snap to items"
+
+#: src/app/main/ui/workspace/sidebar/options/menus/interactions.cljs
 msgid "workspace.options.interaction-animation-smart"
 msgstr "Smart animate"
 

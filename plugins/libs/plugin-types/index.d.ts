@@ -223,6 +223,22 @@ export interface Board extends ShapeBase {
   clipContent: boolean;
 
   /**
+   * Overflow scrolling in View mode, like Figma: the content of a nested
+   * board that is larger than the board scrolls with the wheel, the
+   * trackpad, touch and mouse drag. The board background stays in place.
+   * Top-level boards always scroll with the page; use this on carousels,
+   * horizontal card lists and scrollable panels inside a screen. Requires
+   * `clipContent = true`.
+   */
+  scrollOverflow: 'none' | 'horizontal' | 'vertical' | 'both';
+
+  /**
+   * When true, the scroll stops with a direct child aligned to the board
+   * edge (like CSS `scroll-snap`). Only used when `scrollOverflow` is set.
+   */
+  scrollSnap: boolean;
+
+  /**
    * When true the board will be displayed in the view mode
    */
   showInViewMode: boolean;

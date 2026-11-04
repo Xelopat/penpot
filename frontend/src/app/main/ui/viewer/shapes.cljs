@@ -12,6 +12,7 @@
    [app.common.geom.point :as gpt]
    [app.common.geom.shapes :as gsh]
    [app.common.geom.shapes.bounds :as gsb]
+   [app.common.types.shape :as cts]
    [app.common.types.shape.interactions :as ctsi]
    [app.common.uuid :as uuid]
    [app.main.data.viewer :as dv]
@@ -181,9 +182,33 @@
                             :anchor (:anchor in-place)
                             :pos-type (:pos-type in-place)))))))
 
+(defn- scroll-box-of
+  "Outermost board with overflow scrolling that contains the shape `id`."
+  [objects id]
+  (->> (cfh/get-parent-ids objects id)
+       (filter #(let [shape (get objects %)]
+                  (and (cfh/frame-shape? shape)
+                       (not (cfh/root-frame? shape))
+                       (contains? cts/scroll-overflow-types (:scroll-overflow shape)))))
+       (last)
+       (get objects)))
+
+(defn- scroll-box-to!
+  "Scroll a board with overflow scrolling so `dest` is at its start."
+  [box dest offset animation]
+  (when-let [node (dom/get-element (str "scroll-box-" (:id box)))]
+    (let [zoom (get-in @st/state [:viewer-local :zoom] 1)
+          rect (:selrect dest)
+          base (:selrect box)]
+      (vsc/animate-scroll! node
+                           (* (+ (- (:x rect) (:x base)) (:x offset)) zoom)
+                           (* (+ (- (:y rect) (:y base)) (:y offset)) zoom)
+                           animation))))
+
 (defn- scroll-to!
   "Scroll the viewer so the destination layer is at the top of the screen.
-  When the layer belongs to another screen, navigate there first."
+  When the layer belongs to another screen, navigate there first. A layer
+  inside a board with overflow scrolling scrolls that board instead."
   [interaction]
   (let [state         @st/state
         qparams       (get-in state [:route :query-params])
@@ -197,28 +222,31 @@
         zoom          (get-in state [:viewer-local :zoom] 1)
         offset        (or (:scroll-offset interaction) (gpt/point 0 0))
         animation     (:animation interaction)]
-    (when (and (some? dest) (some? frame))
-      (let [bounds (gsb/get-object-bounds objects frame)
-            rect   (:selrect dest)
-            dx     (* (+ (- (:x rect) (:x bounds)) (:x offset)) zoom)
-            dy     (* (+ (- (:y rect) (:y bounds)) (:y offset)) zoom)]
-        (if (= (:id frame) (:id current))
-          (let [section   (dom/get-element "viewer-section")
-                container (dom/get-element "viewer-base-viewport")]
-            (when (and section container)
-              (let [srect (dom/get-bounding-rect section)
-                    crect (dom/get-bounding-rect container)]
-                (vsc/animate-scroll! section
-                                     (+ (.-scrollLeft ^js section) (- (:left crect) (:left srect)) dx)
-                                     (+ (.-scrollTop ^js section) (- (:top crect) (:top srect)) dy)
-                                     animation))))
-          (when (some #(= (:id %) (:id frame)) (:frames page))
-            (st/emit! (dv/set-nav-scroll (max 0 dy))
-                      (dv/go-to-frame (:id frame)
-                                      (when animation
-                                        {:animation-type :dissolve
-                                         :duration (:duration animation)
-                                         :easing (:easing animation)})))))))))
+    (if-let [box (and (some? dest) (= (:id frame) (:id current))
+                      (scroll-box-of objects (:id dest)))]
+      (scroll-box-to! box dest offset animation)
+      (when (and (some? dest) (some? frame))
+        (let [bounds (gsb/get-object-bounds objects frame)
+              rect   (:selrect dest)
+              dx     (* (+ (- (:x rect) (:x bounds)) (:x offset)) zoom)
+              dy     (* (+ (- (:y rect) (:y bounds)) (:y offset)) zoom)]
+          (if (= (:id frame) (:id current))
+            (let [section   (dom/get-element "viewer-section")
+                  container (dom/get-element "viewer-base-viewport")]
+              (when (and section container)
+                (let [srect (dom/get-bounding-rect section)
+                      crect (dom/get-bounding-rect container)]
+                  (vsc/animate-scroll! section
+                                       (+ (.-scrollLeft ^js section) (- (:left crect) (:left srect)) dx)
+                                       (+ (.-scrollTop ^js section) (- (:top crect) (:top srect)) dy)
+                                       animation))))
+            (when (some #(= (:id %) (:id frame)) (:frames page))
+              (st/emit! (dv/set-nav-scroll (max 0 dy))
+                        (dv/go-to-frame (:id frame)
+                                        (when animation
+                                          {:animation-type :dissolve
+                                           :duration (:duration animation)
+                                           :easing (:easing animation)}))))))))))
 
 (defn- activate-interaction
   [interaction shape base-frame frame-offset objects overlays]

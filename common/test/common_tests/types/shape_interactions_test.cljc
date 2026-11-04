@@ -1258,3 +1258,12 @@
             :when animation]
       (t/is (ctsi/allowed-animation? action-type (:animation-type animation)))
       (t/is (ctsi/check-animation! animation)))))
+
+(t/deftest board-scroll-overflow
+  (let [frame (cts/setup-shape {:type :frame :width 600 :height 300})]
+    (t/testing "boards accept the scroll options"
+      (t/is (cts/valid-shape? (assoc frame :scroll-overflow :horizontal :scroll-snap true)))
+      (t/is (cts/valid-shape? (assoc frame :scroll-overflow :both))))
+
+    (t/testing "unknown directions are rejected"
+      (t/is (not (cts/valid-shape? (assoc frame :scroll-overflow :diagonal)))))))

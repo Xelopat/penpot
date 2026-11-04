@@ -39,7 +39,9 @@
 
 (def frame
   (-> (cts/setup-shape {:type :frame :name "Board" :x 0 :y 0 :width 400 :height 300})
-      (assoc :interactions interactions)))
+      (assoc :interactions interactions
+             :scroll-overflow :horizontal
+             :scroll-snap true)))
 
 (def change
   {:type :add-obj

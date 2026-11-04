@@ -239,12 +239,18 @@
   [:map {:title "GroupAttrs"}
    [:shapes [:vector {:gen/max 10 :gen/min 1} ::sm/uuid]]])
 
+(def scroll-overflow-types
+  "Directions in which the content of a board scrolls in the viewer."
+  #{:horizontal :vertical :both})
+
 (def ^:private schema:frame-attrs
   [:map {:title "FrameAttrs"}
    [:shapes [:vector {:gen/max 10 :gen/min 1} ::sm/uuid]]
    [:hide-fill-on-export {:optional true} :boolean]
    [:show-content {:optional true} :boolean]
-   [:hide-in-viewer {:optional true} :boolean]])
+   [:hide-in-viewer {:optional true} :boolean]
+   [:scroll-overflow {:optional true} [::sm/one-of scroll-overflow-types]]
+   [:scroll-snap {:optional true} :boolean]])
 
 (def ^:private schema:bool-attrs
   [:map {:title "BoolAttrs"}
@@ -439,6 +445,7 @@
 (def ^:private allowed-bool-attrs #{:shapes :bool-type :content})
 (def ^:private allowed-group-attrs #{:shapes})
 (def ^:private allowed-frame-attrs #{:shapes :hide-fill-on-export :show-content :hide-in-viewer
+                                     :scroll-overflow :scroll-snap
                                      :layout :layout-flex-dir :layout-gap-type :layout-gap
                                      :layout-align-items :layout-justify-content :layout-align-content
                                      :layout-wrap-type :layout-padding-type :layout-padding

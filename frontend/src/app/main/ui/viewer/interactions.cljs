@@ -9,6 +9,7 @@
   (:require
    [app.common.data :as d]
    [app.common.data.macros :as dm]
+   [app.common.files.helpers :as cfh]
    [app.common.geom.point :as gpt]
    [app.common.types.page :as ctp]
    [app.common.uuid :as uuid]
@@ -20,6 +21,7 @@
    [app.main.ui.components.dropdown :refer [dropdown]]
    [app.main.ui.hooks :as h]
    [app.main.ui.icons :as deprecated-icon]
+   [app.main.ui.viewer.scroll-box :as vsb]
    [app.main.ui.viewer.shapes :as shapes]
    [app.main.ui.viewer.viewport-common :as vpc]
    [app.main.ui.viewer.viewport-wasm :as viewport.wasm]
@@ -43,9 +45,20 @@
 
         fixed-ids (vpc/get-fixed-ids objects)
 
+        ;; Nested boards with overflow scrolling draw their content in
+        ;; their own scroll boxes
+        scroll-ids
+        (mf/with-memo [objects frame is-fixed]
+          (if is-fixed #{} (vsb/scroll-board-ids objects (:id frame))))
+
+        scroll-content-ids
+        (mf/with-memo [objects scroll-ids]
+          (vsb/scroll-content-ids objects scroll-ids))
+
         not-fixed-ids
         (->> (remove (set fixed-ids) (keys objects))
-             (remove #(= % uuid/zero)))
+             (remove #(= % uuid/zero))
+             (remove scroll-content-ids))
 
         calculate-objects
         (fn [ids]
@@ -63,9 +76,17 @@
         (mf/with-memo [not-fixed-ids page frame size delta]
           (calculate-objects not-fixed-ids))
 
+        objects-scroll
+        (mf/with-memo [scroll-ids page frame size delta]
+          (into {}
+                (map (fn [id]
+                       [id (-> (calculate-objects (cons id (cfh/get-children-ids objects id)))
+                               (update id vsb/prepare-board))]))
+                scroll-ids))
+
         all-objects
-        (mf/with-memo [objects-fixed objects-not-fixed]
-          (merge objects-fixed objects-not-fixed))
+        (mf/with-memo [objects-fixed objects-not-fixed objects-scroll]
+          (merge (apply merge (vals objects-scroll)) objects-fixed objects-not-fixed))
 
         wrapper-fixed
         (mf/with-memo [page frame size]
@@ -124,7 +145,14 @@
                 :xmlnsXlink "http://www.w3.org/1999/xlink"
                 :xmlns "http://www.w3.org/2000/svg"
                 :fill "none"}
-          [:& wrapper-not-fixed {:shape frame :view-box vbox}]]])]]))
+          [:& wrapper-not-fixed {:shape frame :view-box vbox}]]
+
+         (for [[id box-objects] objects-scroll]
+           [:> vsb/scroll-box* {:key (dm/str id)
+                                :board (get box-objects id)
+                                :objects box-objects
+                                :all-objects all-objects
+                                :scale (vpc/viewer-scale size)}])])]]))
 
 (mf/defc viewport*
   {::mf/wrap [mf/memo]}

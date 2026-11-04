@@ -16,6 +16,7 @@
    [app.common.uuid :as uuid]
    [app.main.data.common :as dcm]
    [app.main.data.workspace.interactions :as dwi]
+   [app.main.data.workspace.shapes :as dwsh]
    [app.main.refs :as refs]
    [app.main.store :as st]
    [app.main.ui.components.radio-buttons :refer [radio-button radio-buttons]]
@@ -779,6 +780,58 @@
         [:> flow-item* {:key (:id flow)
                         :flow flow}]])]))
 
+(mf/defc scroll-behavior*
+  "Overflow scrolling of a nested board in the viewer."
+  [{:keys [shape]}]
+  (let [overflow (:scroll-overflow shape)
+
+        options  [{:value ""            :label (tr "workspace.options.scroll-overflow-none")}
+                  {:value "horizontal"  :label (tr "workspace.options.scroll-overflow-horizontal")}
+                  {:value "vertical"    :label (tr "workspace.options.scroll-overflow-vertical")}
+                  {:value "both"        :label (tr "workspace.options.scroll-overflow-both")}]
+
+        change-overflow
+        (mf/use-fn
+         (mf/deps shape)
+         (fn [value]
+           (let [value (when (not= value "") (keyword value))]
+             (st/emit! (dwsh/update-shapes [(:id shape)]
+                                           #(if value
+                                              (assoc % :scroll-overflow value)
+                                              (dissoc % :scroll-overflow :scroll-snap)))))))
+
+        change-snap
+        (mf/use-fn
+         (mf/deps shape)
+         (fn [event]
+           (let [value (-> event dom/get-target dom/checked?)]
+             (st/emit! (dwsh/update-shapes [(:id shape)]
+                                           #(if value
+                                              (assoc % :scroll-snap true)
+                                              (dissoc % :scroll-snap)))))))]
+
+    [:div {:class (stl/css :section)}
+     [:div {:class (stl/css :title)}
+      [:> title-bar* {:collapsable false
+                      :title       (tr "workspace.options.scroll-behavior")
+                      :class       (stl/css :title-bar)}]]
+     [:div {:class (stl/css :content)}
+      [:div {:class (stl/css :interaction-row)}
+       [:div {:class (stl/css :interaction-row-label)}
+        [:div {:class (stl/css :interaction-row-name)}
+         (tr "workspace.options.scroll-overflow")]]
+       [:div {:class (stl/css :interaction-row-select)}
+        [:& select {:default-value (if overflow (name overflow) "")
+                    :options options
+                    :on-change change-overflow}]]]
+      (when overflow
+        [:div {:class (stl/css :interaction-row)}
+         [:div {:class (stl/css :interaction-row-checkbox)}
+          [:> checkbox* {:id (str "scroll-snap-" (:id shape))
+                         :label (tr "workspace.options.scroll-snap")
+                         :checked (true? (:scroll-snap shape))
+                         :on-change change-snap}]]])]]))
+
 (mf/defc interactions*
   [{:keys [interactions shape]}]
   (let [show-content* (mf/use-state true)
@@ -840,6 +893,10 @@
                            :shape shape}])
        (when flows
          [:> page-flows* {:flows flows}]))
+
+     ;; Top-level boards scroll with the page; nested ones can scroll inside
+     (when (and (cfh/frame-shape? shape) (not (cfh/root-frame? shape)))
+       [:> scroll-behavior* {:shape shape}])
 
      (when framed-shape?
        [:> interactions* {:interactions interactions

@@ -464,6 +464,19 @@ The viewer behaves as follows; follow these rules, otherwise links "jump" to oth
     Using the board itself as destination scrolls back to the top ("back to top" buttons).
   * Default animation is a 400 ms smooth scroll; set `{ type: "smart-animate", duration, easing }` to tune it or `null` to jump.
 
+**Scrolling inside a block: carousels, card strips, scrollable panels**
+  * Make the block a nested board with `clipContent = true` and its full content inside (wider or taller than the board),
+    then set `board.scrollOverflow = "horizontal"` (or "vertical" / "both"). In View mode the content scrolls with the
+    wheel, trackpad, touch and mouse drag; the board background stays in place. Do not build carousels as one
+    overlay per slide.
+  * `board.scrollSnap = true` stops the scroll with a direct child aligned to the board edge (one card per swipe):
+    make the cards direct children of the board, spaced evenly.
+  * Top-level boards always scroll with the page: never set `scrollOverflow` on them. Layers inside a scrolling board
+    ignore `fixedWhenScrolling`; scrolling boards are drawn above other non-fixed layers of the screen.
+  * Dots or thumbnails that jump to a slide: `scroll-to` with a slide (a child of the scrolling board) as destination
+    scrolls that board, not the page. Each button always goes to the same slide, so "previous/next" arrows only work
+    as fixed targets (e.g. two-slide carousels); otherwise let the client swipe.
+
 **Hover and timed effects**
   * Triggers: "click", "mouse-press" (while pressed), "mouse-over" (while hovering), "mouse-enter", "mouse-leave", "after-delay" (boards only).
   * "mouse-over" + `open-overlay` is the hover state: it opens on pointer-enter and closes when the pointer leaves BOTH the

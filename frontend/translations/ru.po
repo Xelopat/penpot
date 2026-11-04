@@ -5811,6 +5811,34 @@ msgid "workspace.options.interaction-toggle-overlay-dest"
 msgstr "Переключить наложение: %s"
 
 #: src/app/main/ui/workspace/sidebar/options/menus/interactions.cljs
+msgid "workspace.options.scroll-behavior"
+msgstr "Прокрутка"
+
+#: src/app/main/ui/workspace/sidebar/options/menus/interactions.cljs
+msgid "workspace.options.scroll-overflow"
+msgstr "Содержимое"
+
+#: src/app/main/ui/workspace/sidebar/options/menus/interactions.cljs
+msgid "workspace.options.scroll-overflow-both"
+msgstr "По горизонтали и вертикали"
+
+#: src/app/main/ui/workspace/sidebar/options/menus/interactions.cljs
+msgid "workspace.options.scroll-overflow-horizontal"
+msgstr "По горизонтали"
+
+#: src/app/main/ui/workspace/sidebar/options/menus/interactions.cljs
+msgid "workspace.options.scroll-overflow-none"
+msgstr "Без прокрутки"
+
+#: src/app/main/ui/workspace/sidebar/options/menus/interactions.cljs
+msgid "workspace.options.scroll-overflow-vertical"
+msgstr "По вертикали"
+
+#: src/app/main/ui/workspace/sidebar/options/menus/interactions.cljs
+msgid "workspace.options.scroll-snap"
+msgstr "Привязка к элементам"
+
+#: src/app/main/ui/workspace/sidebar/options/menus/interactions.cljs
 msgid "workspace.options.interaction-animation-smart"
 msgstr "Умная анимация"
 
