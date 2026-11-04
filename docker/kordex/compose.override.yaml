@@ -1,7 +1,11 @@
 services:
+  # The fork frontend and backend go together: from kordex.4 on the frontend
+  # stores prototype actions that the official backend rejects when shapes
+  # are duplicated or pasted. `:kordex` moves only after a successful build;
+  # set the variables to a `-<commit>` tag to pin or roll back.
   penpot-frontend:
-    image: ${KORDEX_FRONTEND_IMAGE:?Set KORDEX_FRONTEND_IMAGE to the tested fork image}
-  # The frontend from kordex.4 on stores prototype actions that the official
-  # backend rejects when shapes are duplicated; both images go together.
+    image: ${KORDEX_FRONTEND_IMAGE:-ghcr.io/xelopat/penpot-frontend:kordex}
+    pull_policy: always
   penpot-backend:
-    image: ${KORDEX_BACKEND_IMAGE:?Set KORDEX_BACKEND_IMAGE to the tested fork image}
+    image: ${KORDEX_BACKEND_IMAGE:-ghcr.io/xelopat/penpot-backend:kordex}
+    pull_policy: always

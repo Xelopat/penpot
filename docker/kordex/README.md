@@ -1,115 +1,152 @@
-# Penpot 2.18.5: исправления Plugin API и MCP
+# Penpot 2.18.5: форк Kordex (прототипы, Plugin API и MCP)
 
-Ветка основана на официальной версии 2.18.5. Исправление связывает свойство
-`relativeTo` в Plugin API с полем `position-relative-to`, которое читает
-редактор и просмотрщик Penpot. Последующие сборки также исправляют:
+Ветка основана на официальной версии 2.18.5. Ранние сборки исправили Plugin API:
+привязку окна `relativeTo`, её перенос при клонировании, `linear` по умолчанию
+для анимаций, экспорт файла, номер версии и чтение комментариев по странице.
 
-- перенос привязки окна на скопированный опорный объект при клонировании;
-- значение `linear` по умолчанию, когда у анимации не указан `easing`;
-- экспорт файла через текущий серверный механизм с ожиданием сохранения;
-- номер версии, который Plugin API раньше возвращал как `null`.
+## kordex.4: прототипы ближе к Figma
 
-В `kordex.3` добавлена фильтрация обсуждений по странице и исправлено
-значение `showResolved` по умолчанию. Чтение комментариев больше не должно
-дублировать обсуждения на всех страницах файла. Редактирование текста
-комментария по-прежнему доступно только его автору.
+- **Окна относительно экрана.** Позиции «по центру», «снизу по центру» и другие
+  считаются от видимой области, а не от всей длинной доски. Окно остаётся на
+  месте при прокрутке страницы под ним. В редакторе это пункт «Экран» в поле
+  «Относительно», в Plugin API — `relativeTo: 'viewport'`. Если `relativeTo` не
+  указан, Plugin API использует экран, кроме ручной позиции.
+- **Прокрутка к блоку** (`scroll-to`): якорные ссылки меню с плавной прокруткой
+  и отступом под закреплённую шапку. Цель на другой доске — переход и
+  прокрутка; цель внутри прокручиваемого блока — прокрутка этого блока.
+- **Замена окна** (`swap-overlay`): вкладки, аккордеоны и шаги не копятся
+  стопкой. Старое окно исчезает только после появления нового.
+- **Smart animate**: слои с одинаковыми именами плавно меняют положение, размер
+  и прозрачность при переходе между экранами и при замене окна; слои с другим
+  видом растворяются друг в друге.
+- **Наведение без мигания**: «При наведении» не закрывает окно, пока указатель
+  над ним, а клики по состоянию наведения доходят до элемента под ним.
+- **Анимация по умолчанию**: новые переходы получают растворение 250 мс
+  (150 мс для наведения), прокрутка — 400 мс.
+- **Прокрутка внутри блока**: вложенная доска с параметром «Прокрутка»
+  (по горизонтали, по вертикали или в обе стороны) листается колесом,
+  тачпадом, свайпом и перетаскиванием мышью, с привязкой к элементам по желанию.
+  Фон доски остаётся на месте.
 
-Оба варианта `File.export('penpot')` и `File.export('zip')` возвращают текущий
-ZIP-контейнер формата `.penpot`, как экспорт из интерфейса. Удалённый старый
-экспортёр SVG-архивов не используется.
+Анимации и прокрутка блоков работают в обычном (SVG) просмотрщике. В
+экспериментальном WASM-просмотрщике smart animate заменяется растворением, а
+прокрутка блоков не поддерживается.
 
-Эти исправления не меняют формат базы или серверный API.
-Уже созданные ошибочные взаимодействия могут потребовать повторного задания
-привязки через MCP: обновление не переписывает существующие проекты.
+### Что меняется на сервере
 
-## Готовность образа
+Обновляются **два образа: интерфейс и backend**. Backend 2.18.5 проверяет
+каждую вставленную или продублированную фигуру по схеме из общего кода.
+Официальный образ отклоняет новые действия и smart animate: это проверено на
+официальном `penpot.jar` в сборке. Поэтому backend-образ форка — это официальный
+`penpotapp/backend:2.18.5`, в котором заменён только `penpot.jar`, собранный из
+того же коммита. Код сервера, миграции базы и номер версии (`2.18.5-RC1`) не
+меняются. Сборка проверяет, что новый `penpot.jar` принимает такие изменения.
 
-Образ публикуется **только после успешной сборки, проверки форматирования,
-статического анализа и тестов привязок, анимаций и экспорта**. Состояние сборки:
-<https://github.com/Xelopat/penpot/actions/workflows/kordex-frontend.yml>.
+Exporter, MCP-сервер и остальные официальные сервисы не меняются. Держите их на
+**2.18.5**, а не `latest` и не `2.18`. Иначе новый официальный backend прогонит
+миграции под свою версию и разойдётся с интерфейсом форка.
 
-Имена образов:
+## Образы
 
-- `ghcr.io/xelopat/penpot-frontend:2.18.5-kordex.3` — текущая сборка исправлений;
-- `ghcr.io/xelopat/penpot-frontend:2.18.5-kordex.3-<commit>` — конкретный коммит.
+Образы публикуются **только после успешной сборки и тестов**:
 
-Публикуются варианты Linux amd64 и arm64. Первая сборка может занять много
-времени: она собирает официальный интерфейс, WASM-рендерер и плагины.
+| Сервис | Плавающий тег | Версия | Конкретный коммит |
+|---|---|---|---|
+| Интерфейс | `ghcr.io/xelopat/penpot-frontend:kordex` | `…:2.18.5-kordex.4` | `…:2.18.5-kordex.4-<commit>` |
+| Backend | `ghcr.io/xelopat/penpot-backend:kordex` | `…:2.18.5-kordex.4` | `…:2.18.5-kordex.4-<commit>` |
+| MCP | `ghcr.io/xelopat/penpot-mcp:kordex` | `…:2.18.5-kordex.2` | `…:2.18.5-kordex.2-<commit>` |
 
-Сборка `2.18.5-kordex.3-b904c07a3f8c` прошла форматирование, статический
-анализ и 42 теста с 495 проверками. Образ доступен без авторизации.
-Результат: <https://github.com/Xelopat/penpot/actions/runs/41308718549>.
-Дайджест образа:
-`sha256:2d2815906d43aae20d2695a8d1347fc2df16d24bd5c090bc74da640c8d1b49ec`.
+Сборки: [интерфейс](https://github.com/Xelopat/penpot/actions/workflows/kordex-frontend.yml),
+[backend](https://github.com/Xelopat/penpot/actions/workflows/kordex-backend.yml),
+[MCP](https://github.com/Xelopat/penpot/actions/workflows/kordex-mcp.yml).
+Они запускаются при пуше в ветку `codex/mcp-overlay-relative-to`.
+Публикуются варианты Linux amd64 и arm64. Если пакет приватный, сделайте его
+публичным в настройках пакета на GitHub или выполните на сервере
+`docker login ghcr.io` с токеном с правом `read:packages`.
 
 ## Установка на существующий сервер
 
-Выполняйте команды в папке **действующей установки** с `docker-compose.yaml`.
-Используйте прежнее имя Compose-проекта и прежние параметры `-p`/`--env-file`,
-если вы их задавали при запуске. Это исправление предназначено для установки
-Penpot **2.18.5**. Для другой версии сначала нужна отдельная сборка.
+Выполняйте команды в папке **действующей установки** с `docker-compose.yaml`,
+с прежним именем Compose-проекта и прежними `-p`/`--env-file`, если они были.
+Не запускайте обновление, пока сборки интерфейса и backend не завершились
+успешно.
 
-Не запускайте обновление, пока сборка образа не завершилась успешно.
-Для указанной сборки скачивание без авторизации уже проверено. Если будущий
-пакет окажется приватным, откройте настройки пакета:
-<https://github.com/users/Xelopat/packages/container/penpot-frontend/settings>,
-выберите **Change visibility → Public** и подтвердите имя пакета.
-Вместо этого можно оставить пакет приватным и авторизоваться на сервере
-через `docker login ghcr.io` с токеном, имеющим право `read:packages`.
-Правила доступа: <https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry>.
+1. Зафиксируйте официальные образы в `.env`, чтобы они не обновились сами:
 
-Сначала сохраните текущий образ интерфейса для отката:
+   ```bash
+   grep -q '^PENPOT_VERSION=' .env && sed -i 's/^PENPOT_VERSION=.*/PENPOT_VERSION=2.18.5/' .env || echo 'PENPOT_VERSION=2.18.5' >> .env
+   ```
 
-```bash
-frontend_id=$(docker compose -f docker-compose.yaml ps -q penpot-frontend)
-test -n "$frontend_id" || { echo 'Контейнер интерфейса не найден'; exit 1; }
-old_image=$(docker inspect --format '{{.Image}}' "$frontend_id")
-rollback_image="penpot-kordex-rollback:$(date +%Y%m%d-%H%M%S)"
-docker tag "$old_image" "$rollback_image"
-printf '%s\n' "$rollback_image" > penpot-frontend-rollback.txt
-```
+   Если в вашем `docker-compose.yaml` версии образов записаны прямо, проверьте,
+   что exporter, MCP и остальные сервисы указаны как `2.18.5`.
 
-Скачайте отдельное дополнение к вашему Compose-файлу:
+2. Сохраните текущие образы для отката и сделайте резервную копию базы:
 
-```bash
-curl -fL 'https://raw.githubusercontent.com/Xelopat/penpot/codex/mcp-overlay-relative-to/docker/kordex/compose.override.yaml' -o docker-compose.kordex.yaml
-export KORDEX_FRONTEND_IMAGE=ghcr.io/xelopat/penpot-frontend:2.18.5-kordex.3
-docker compose -f docker-compose.yaml -f docker-compose.kordex.yaml pull penpot-frontend
-docker compose -f docker-compose.yaml -f docker-compose.kordex.yaml up -d --no-deps penpot-frontend
-docker compose -f docker-compose.yaml -f docker-compose.kordex.yaml logs --tail=50 penpot-frontend
-```
+   ```bash
+   for s in penpot-frontend penpot-backend; do
+     id=$(docker compose ps -q "$s"); test -n "$id" || { echo "Нет контейнера $s"; exit 1; }
+     tag="penpot-kordex-rollback-$s:$(date +%Y%m%d-%H%M%S)"
+     docker tag "$(docker inspect --format '{{.Image}}' "$id")" "$tag" && echo "$tag" >> penpot-rollback.txt
+   done
+   docker compose exec -T penpot-postgres pg_dump -U penpot penpot | gzip > penpot-before-kordex4.sql.gz
+   ```
 
-Если `pull` завершился ошибкой, не выполняйте `up`. Проверьте состояние
-сборки и доступность пакета GHCR. Для публичной установки пакет должен быть
-публичным; владельцу доступен и вход через `docker login ghcr.io`.
+3. Скачайте дополнение к Compose-файлу (интерфейс и backend на теге `:kordex`
+   с `pull_policy: always`) и обновите оба сервиса:
 
-Остальные сервисы и тома эти команды не пересоздают. Интерфейс кратковременно
-перезапустится. После запуска обновите вкладку Penpot с очисткой кеша
-(`Ctrl+Shift+R`), откройте редактор и заново подключите MCP при необходимости.
-Проверьте привязку окна через MCP и его положение в просмотрщике после
-прокрутки. Не считайте проверку завершённой только по ответу MCP.
+   ```bash
+   curl -fL 'https://raw.githubusercontent.com/Xelopat/penpot/codex/mcp-overlay-relative-to/docker/kordex/compose.override.yaml' -o docker-compose.kordex.yaml
+   docker compose -f docker-compose.yaml -f docker-compose.kordex.yaml pull penpot-frontend penpot-backend
+   docker compose -f docker-compose.yaml -f docker-compose.kordex.yaml up -d --no-deps penpot-backend penpot-frontend
+   docker compose -f docker-compose.yaml -f docker-compose.kordex.yaml logs --tail=50 penpot-backend penpot-frontend
+   ```
 
-Чтобы последующие запуски сохраняли исправление, добавьте
-`KORDEX_FRONTEND_IMAGE=ghcr.io/xelopat/penpot-frontend:2.18.5-kordex.3` в ваш
-существующий `.env` и используйте оба файла `-f`. Команда только с исходным
-файлом вернёт официальный образ интерфейса.
+   Если `pull` завершился ошибкой, не выполняйте `up`. Дальше всегда используйте
+   оба файла `-f`: команда только с исходным файлом вернёт официальные образы.
 
-## Откат интерфейса
+4. Обновите вкладку Penpot с очисткой кеша (`Ctrl+Shift+R`) и при необходимости
+   заново подключите MCP. Проверьте в просмотрщике окно после прокрутки длинной
+   страницы, вкладки с заменой окна, якорную ссылку и дублирование слоя с новым
+   действием: дублирование проверяет схему backend.
+
+### Последующие обновления
+
+Тег `:kordex` перемещается после каждой успешной сборки:
 
 ```bash
-export KORDEX_FRONTEND_IMAGE=$(cat penpot-frontend-rollback.txt)
-docker image inspect "$KORDEX_FRONTEND_IMAGE" > /dev/null
-docker compose -f docker-compose.yaml -f docker-compose.kordex.yaml up -d --no-deps penpot-frontend
+docker compose -f docker-compose.yaml -f docker-compose.kordex.yaml pull penpot-frontend penpot-backend
+docker compose -f docker-compose.yaml -f docker-compose.kordex.yaml up -d --no-deps penpot-frontend penpot-backend
 ```
 
-Если вы сохраняли настройку в `.env`, замените её и там на имя образа отката.
-Откат не требует восстановления базы: данная сборка меняет только интерфейс.
+Watchtower можно использовать только как опцию и только для этих двух
+сервисов: включите `--label-enable` и добавьте им метку
+`com.centurylinklabs.watchtower.enable=true`. Официальные сервисы им не
+обновляйте.
+
+## Откат
+
+На конкретный коммит форка (теги видны на странице пакета или в итогах сборки):
+
+```bash
+export KORDEX_FRONTEND_IMAGE=ghcr.io/xelopat/penpot-frontend:2.18.5-kordex.4-<commit>
+export KORDEX_BACKEND_IMAGE=ghcr.io/xelopat/penpot-backend:2.18.5-kordex.4-<commit>
+docker compose -f docker-compose.yaml -f docker-compose.kordex.yaml up -d --no-deps penpot-frontend penpot-backend
+```
+
+На сохранённые до обновления образы: подставьте в те же переменные строки из
+`penpot-rollback.txt`. Чтобы откат сохранился после перезапуска, запишите
+переменные в `.env`.
+
+Откат не требует восстановления базы: схема данных и миграции не менялись.
+Но файлы, где уже есть новые действия (`scroll-to`, `swap-overlay`, smart
+animate), официальный backend не даст дублировать или вставлять. Официальный
+интерфейс эти действия не воспроизводит. Перед возвратом на официальные образы
+замените такие взаимодействия.
 
 ## Дальнейшие версии
 
 Сохраняйте точную официальную базовую версию и отдельный коммит исправления.
-При переходе на новую версию перенесите исправление, обновите базовый образ
-в Dockerfile, задайте новый тег и дождитесь успешной сборки и проверок.
-Не смешивайте интерфейс этой ветки с более новой версией остальных сервисов.
-Когда официальная версия исправит ту же причину, дополнительный патч можно
-убрать после проверки сценария в просмотрщике.
+При переходе на новую официальную версию перенесите исправления, обновите
+базовые образы в `Dockerfile` и `Dockerfile.backend`, задайте новые теги и
+дождитесь успешной сборки. Не смешивайте образы форка с более новой версией
+остальных сервисов.
