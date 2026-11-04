@@ -6,6 +6,7 @@ on:
     paths:
       - 'frontend/**'
       - 'common/**'
+      - 'mcp/packages/plugin/**'
       - 'docker/kordex/**'
       - '.github/workflows/kordex-frontend.yml'
   workflow_dispatch:

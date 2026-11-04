@@ -190,6 +190,9 @@ CRITICAL: The `penpotUtils` object provides essential utilities - USE THESE INST
     General-purpose utility for analyzing/validating descendants
     Calls evaluator on each descendant; collects non-null/undefined results
     Powerful pattern: evaluator can return corrector functions or diagnostic data
+  * interactionsToCss(shape: Shape): { css: string, items: { index, trigger, action, css, note }[] }
+    CSS for the prototype animations of a shape (see "Prototype to code" below)
+  * motionTokensToCss(): string
   * Further functions for specific tasks (described in the sections below)
 
 General pointers for working with Penpot designs:
@@ -470,6 +473,19 @@ The viewer behaves as follows; follow these rules, otherwise links "jump" to oth
     keep working. Keep hover animations short (default 150 ms dissolve).
   * Tooltips: "mouse-over" + `open-overlay` with `relativeTo:` the element and e.g. `position: "bottom-center"` of an anchor below it.
   * Auto-play (slideshows, hints): an "after-delay" interaction on a board with `delay` in ms.
+
+**Prototype to code (hand-off)**
+  * `penpot.generateStyle` returns static styles only. When turning a prototype into code, also read each element's
+    `interactions` and translate them with `penpotUtils.interactionsToCss(shape)`, which returns `{ css, items }`:
+    dissolve/slide/push as `@keyframes` + `animation`, `after-delay` as `animation-delay`, hover overlays as `:hover`
+    transitions, smart animate as transitions of the properties that change between same-named layers (state switched
+    by an `.is-<state>` class), scroll-to as an anchor with `scroll-margin-top`. Each item has a `note` saying which
+    class or JavaScript the CSS expects. Selectors come from layer names: give layers meaningful names first.
+  * Motion tokens: keep durations as tokens so code and prototype agree. Penpot has no duration or text token type,
+    so the convention is `number` tokens named `motion.duration.<name>` in milliseconds (e.g. `motion.duration.fast = 150`,
+    `motion.duration.base = 250`, `motion.duration.slow = 400`); `penpotUtils.motionTokensToCss()` returns them as
+    `:root` custom properties (`--motion-duration-fast: 150ms`). Use the same values in interaction animations.
+    Easings need no token: Penpot only offers the CSS keywords (`ease-out`, ...), which are used as they are.
 
 **Checks**
   * `shape.clone()` copies interactions that still point to the original destinations and anchors; re-target them after cloning.

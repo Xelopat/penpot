@@ -10,6 +10,7 @@ import type {
     Text,
     VariantContainer,
 } from "@penpot/plugin-types";
+import { interactionsToCss, motionTokensToCss, type CssShape, type InteractionsCssResult } from "./InteractionsCss.ts";
 
 export class PenpotUtils {
     /**
@@ -202,6 +203,29 @@ export class PenpotUtils {
         }
         penpot.openPage(page);
         return penpot.generateStyle([shape], { type: "css", includeChildren: true });
+    }
+
+    /**
+     * Translates the prototype interactions of a shape into CSS for hand-off:
+     * dissolve/slide/push animations as `@keyframes` + `animation`, `after-delay`
+     * as `animation-delay`, hover overlays as `:hover` transitions, smart animate
+     * as transitions of the properties that change between same-named layers,
+     * and scroll-to as an anchor with `scroll-margin-top`.
+     * Selectors are derived from layer names; each item has a note on how to use it.
+     *
+     * @param shape - The shape whose `interactions` are translated
+     */
+    public static interactionsToCss(shape: Shape): InteractionsCssResult {
+        return interactionsToCss(shape as unknown as CssShape);
+    }
+
+    /**
+     * CSS custom properties (`:root { --motion-duration-fast: 150ms; }`) for the
+     * local tokens named `motion.duration.*` (milliseconds) and `motion.easing.*`.
+     */
+    public static motionTokensToCss(): string {
+        const tokens = penpot.library.local.tokens.sets.flatMap((set: any) => set.tokens);
+        return motionTokensToCss(tokens);
     }
 
     /**
