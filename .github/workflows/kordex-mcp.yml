@@ -39,6 +39,7 @@ jobs:
             --platform linux/amd64,linux/arm64 \
             --build-arg "KORDEX_MCP_VERSION=$version" \
             --tag "ghcr.io/xelopat/penpot-mcp:$version" \
+            --tag ghcr.io/xelopat/penpot-mcp:kordex \
             --tag ghcr.io/xelopat/penpot-mcp:2.18.5-kordex.2 \
             --cache-from type=gha,scope=kordex-mcp \
             --cache-to type=gha,scope=kordex-mcp,mode=max \

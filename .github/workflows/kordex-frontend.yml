@@ -41,6 +41,7 @@ jobs:
             --build-arg "KORDEX_VERSION=$version" \
             --build-arg "KORDEX_REVISION=$GITHUB_SHA" \
             --tag "ghcr.io/xelopat/penpot-frontend:$version" \
+            --tag ghcr.io/xelopat/penpot-frontend:kordex \
             --tag ghcr.io/xelopat/penpot-frontend:2.18.5-kordex.4 \
             --cache-from type=gha \
             --cache-to type=gha,mode=max \
